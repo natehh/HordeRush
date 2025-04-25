@@ -21,6 +21,11 @@ struct PhysicsCategory {
     static let all      : UInt32 = UInt32.max
 }
 
+// Global operator overload for adding CGPoints
+func + (left: CGPoint, right: CGPoint) -> CGPoint {
+    return CGPoint(x: left.x + right.x, y: left.y + right.y)
+}
+
 class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // Player Properties
@@ -33,8 +38,23 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private let projectileSpeed: CGFloat = 600.0
     private let fireRate: TimeInterval = 0.2
 
-    // Crowd Properties (Placeholder)
+    // Crowd Properties
     var crowdCount: Int = 1
+    private var crowdMembers: [SKSpriteNode] = []
+    private let followSpeedFactor: CGFloat = 8.0 // How quickly followers catch up
+    private let crowdMemberSize = CGSize(width: 24, height: 24)
+    private let crowdMemberColor = UIColor.cyan
+    // Define relative positions for crowd members around the player
+    private let crowdOffsets: [CGPoint] = [
+        CGPoint(x: -30, y: -40), // Back-left
+        CGPoint(x:  30, y: -40), // Back-right
+        CGPoint(x:   0, y: -60), // Directly behind 
+        CGPoint(x: -60, y: -80), // Further back-left
+        CGPoint(x:  60, y: -80), // Further back-right
+        CGPoint(x: -30, y: -100),// Even further back-left
+        CGPoint(x:  30, y: -100),// Even further back-right
+        // Add more for larger crowds if needed
+    ]
 
     // World Properties
     private let worldNode = SKNode()
@@ -126,6 +146,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         if let player = player {
             addChild(player)
+            // Initially, the player IS the crowd of 1
+            // We don't add to crowdMembers array until count > 1
         }
     }
 
@@ -145,11 +167,22 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     func spawnProjectile() {
-        guard let player = self.player else { return }
-        let startPosition = player.position
-
+        // Spawn from Player (Leader)
+        if let player = self.player {
+            spawnProjectile(from: player.position, leadProjectile: true)
+        }
+        
+        // Spawn from Crowd Members
+        for member in crowdMembers {
+            spawnProjectile(from: member.position, leadProjectile: false)
+        }
+    }
+    
+    // Helper for spawning projectiles from a specific position
+    func spawnProjectile(from startPosition: CGPoint, leadProjectile: Bool) {
         let projectile = SKSpriteNode(color: projectileColor, size: projectileSize)
-        projectile.position = CGPoint(x: startPosition.x, y: startPosition.y + player.size.height / 2)
+        // Offset starting Y slightly based on who is firing for visual clarity (optional)
+        projectile.position = CGPoint(x: startPosition.x, y: startPosition.y + (leadProjectile ? player?.size.height ?? 32 : crowdMemberSize.height) / 2)
         projectile.zPosition = 9
         projectile.physicsBody = SKPhysicsBody(rectangleOf: projectile.size)
         projectile.physicsBody?.isDynamic = true
@@ -161,9 +194,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         projectileLayer.addChild(projectile)
 
-        // Movement action remains the same, as its target Y is absolute
         let destinationY = size.height / 2 + projectile.size.height
-        let distance = destinationY - projectile.position.y // Position relative to scene
+        // Calculate distance relative to the scene, regardless of spawner position
+        let sceneStartPosition = projectileLayer.convert(projectile.position, to: self)
+        let distance = destinationY - sceneStartPosition.y 
+        guard distance > 0 else { // Avoid issues if spawned too high
+            projectile.removeFromParent()
+            return
+        }
         let duration = TimeInterval(distance / projectileSpeed)
         let moveAction = SKAction.moveTo(y: destinationY, duration: duration)
         let removeAction = SKAction.removeFromParent()
@@ -204,7 +242,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             var nodeDescription = ""
 
             if objectTypeRoll < 0.5 { // 50% chance Gate
-                let initialValue = Int.random(in: -100 ... -20)
+                let initialValue = Int.random(in: -30 ... -5)
                 objectNode = GateNode(initialValue: initialValue)
                 nodeDescription = "Gate(value: \(initialValue))"
             } else if objectTypeRoll < 0.8 { // 30% chance Barrel (0.5 to 0.8)
@@ -279,6 +317,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         }
         let deltaTime = currentTime - lastUpdateTime
         lastUpdateTime = currentTime
+        guard deltaTime > 0, let player = player else { return } // Ensure player exists
 
         // Scroll the world node
         let distanceToScroll = scrollSpeed * CGFloat(deltaTime)
@@ -294,19 +333,28 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         // --- Object Cleanup --- 
         for node in objectLayer.children {
-            // Get position relative to the scene
-            let nodeScenePosition = convert(node.position, from: objectLayer) // Get position within scene
-            
-            // Check if the node is completely below the screen bottom edge
-            // Use node.frame.maxY for top edge calculation relative to node's anchor point if needed
-            // Assuming anchor point 0.5, 0.5:
-            let nodeTopY = nodeScenePosition.y + node.frame.size.height / 2 
-
-            if nodeTopY < -self.size.height / 2 { 
-                // print("Removing node that scrolled off bottom: \(node)")
+            let nodeScenePosition = convert(node.position, from: objectLayer)
+            let nodeTopY = nodeScenePosition.y + node.frame.size.height / 2
+            if nodeTopY < -self.size.height / 2 {
                 node.removeFromParent()
             }
         }
+
+        // --- Crowd Following Logic (Cluster Formation) --- 
+        for (index, member) in crowdMembers.enumerated() {
+            // Target position: Offset relative to the player
+            let offsetIndex = index % crowdOffsets.count
+            let targetPosition = player.position + crowdOffsets[offsetIndex]
+            
+            // Calculate vector towards target
+            let deltaX = targetPosition.x - member.position.x
+            let deltaY = targetPosition.y - member.position.y
+            
+            // Move using lerp (scaled by deltaTime)
+            member.position.x += deltaX * followSpeedFactor * CGFloat(deltaTime)
+            member.position.y += deltaY * followSpeedFactor * CGFloat(deltaTime)
+        }
+        // ---------------------------------------------------
     }
 
     // MARK: - SKPhysicsContactDelegate Methods
@@ -387,20 +435,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         print("Handling Player-Gate collision")
         let value = gate.playerContact() // Get the final value from the gate
 
-        // Apply crowd effect (Placeholder logic)
+        // Apply crowd effect using new methods
         if value > 0 {
-            print("Adding \(value) to crowd")
-            crowdCount += value
-        } else {
-            // Only subtract if the value is still negative AND non-zero
-            // (Could refine this rule - e.g., always subtract if negative?)
-            if value < 0 {
-                 print("Subtracting \(abs(value)) from crowd")
-                 crowdCount = max(1, crowdCount + value) // Ensure crowd count doesn't go below 1 (the leader)
-            }
+            addCrowdMembers(count: value)
+        } else if value < 0 {
+            removeCrowdMembers(count: abs(value))
         }
-        print("New crowd count (placeholder): \(crowdCount)")
-        // Update UI later
+        // crowdCount is updated within add/remove methods
 
         gate.removeFromParent() // Remove gate after interaction
     }
@@ -441,6 +482,42 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // func setupPlayer() { ... }
     // func setupUI() { ... }
     // func spawnObjects() { ... }
+
+    // --- Crowd Management --- 
+    func addCrowdMembers(count: Int) {
+        guard let player = player else { return }
+        print("Adding \(count) members to crowd.")
+        
+        for i in 0..<count {
+            let member = SKSpriteNode(color: crowdMemberColor, size: crowdMemberSize)
+            member.zPosition = player.zPosition - 0.1
+            
+            // Calculate initial position based on the next available offset relative to the player
+            let currentMemberCount = crowdMembers.count + i // Index for the member being added *now*
+            let offsetIndex = currentMemberCount % crowdOffsets.count
+            member.position = player.position + crowdOffsets[offsetIndex] // Start near target offset
+            
+            crowdMembers.append(member)
+            addChild(member)
+        }
+        crowdCount = 1 + crowdMembers.count
+        print("Crowd count now: \(crowdCount)")
+    }
+
+    func removeCrowdMembers(count: Int) {
+        print("Removing up to \(count) members from crowd.")
+        let removalCount = min(count, crowdMembers.count)
+        guard removalCount > 0 else { return }
+        
+        for _ in 0..<removalCount {
+            if let memberToRemove = crowdMembers.popLast() {
+                memberToRemove.removeFromParent()
+            }
+        }
+        crowdCount = 1 + crowdMembers.count
+         print("Crowd count now: \(crowdCount)")
+    }
+    // -----------------------
 }
 
 // Extend GameScene to conform to SKPhysicsContactDelegate later
