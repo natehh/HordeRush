@@ -25,53 +25,82 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     // Player Properties
     private var player: SKSpriteNode?
-    private var lastTouchLocation: CGPoint? // Stores the last position of the touch
+    private var lastTouchLocation: CGPoint?
 
     // Projectile Properties
     private let projectileSize = CGSize(width: 5, height: 10)
-    private let projectileColor = UIColor.yellow // Use yellow for visibility
-    private let projectileSpeed: CGFloat = 600.0 // Points per second
-    private let fireRate: TimeInterval = 0.2 // Seconds between shots (5 shots/sec)
+    private let projectileColor = UIColor.yellow
+    private let projectileSpeed: CGFloat = 600.0
+    private let fireRate: TimeInterval = 0.2
 
     // Crowd Properties (Placeholder)
-    var crowdCount: Int = 1 // Start with the leader
+    var crowdCount: Int = 1
+
+    // World Properties
+    private let worldNode = SKNode()
+    private let objectLayer = SKNode()       // For gates, barrels, zombies
+    private let projectileLayer = SKNode()   // For projectiles
+    private var backgroundTiles: [SKSpriteNode] = []
+    private let scrollSpeed: CGFloat = 150.0 // Points per second for world scroll
+    private var lastUpdateTime: TimeInterval = 0
 
     override func didMove(to view: SKView) {
         // Setup scene
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        backgroundColor = .darkGray
+        backgroundColor = .darkGray // Will be covered by background tiles
+
+        // Add World Node (parent for scrolling elements)
+        addChild(worldNode)
+        // Add layers
+        worldNode.addChild(objectLayer)
+        addChild(projectileLayer) // Projectiles don't scroll with the world
 
         // Setup physics world
-        physicsWorld.gravity = CGVector(dx: 0, dy: 0) // No gravity
-        physicsWorld.contactDelegate = self // Set contact delegate
+        physicsWorld.gravity = CGVector(dx: 0, dy: 0)
+        physicsWorld.contactDelegate = self
 
-        // Setup player
+        // Setup background
+        setupBackground()
+
+        // Setup player (added directly to scene)
         setupPlayer()
 
         // Start the shooting timer
         setupShooting()
 
-        // Spawn a test gate
+        // Spawn test objects (added to objectLayer within worldNode)
         spawnTestGate()
+        spawnTestBarrel()
 
         // setupUI()
     }
 
-    func setupPlayer() {
-        // Create Player sprite (placeholder)
-        player = SKSpriteNode(color: .blue, size: CGSize(width: 32, height: 32)) // Use 32x32 as per plan
-        // Position near the bottom-center
-        player?.position = CGPoint(x: 0, y: -size.height / 2 + (player?.size.height ?? 0) + 50)
-        player?.zPosition = 10 // Ensure player is visually above other elements later
+    func setupBackground() {
+        // Create a placeholder tile texture (replace with "background_tile.png" later)
+        let tileSize = CGSize(width: size.width, height: size.height)
+        let placeholderTexture = SKTexture(size: tileSize, color: .darkGray, darkerColor: .black)
 
-        // Add physics body to player
+        for i in 0...1 {
+            let tile = SKSpriteNode(texture: placeholderTexture)
+            tile.size = tileSize
+            tile.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            tile.position = CGPoint(x: 0, y: CGFloat(i) * tileSize.height)
+            tile.zPosition = -1 // Ensure background is behind everything
+            worldNode.addChild(tile) // Add to worldNode so it scrolls
+            backgroundTiles.append(tile)
+        }
+    }
+
+    func setupPlayer() {
+        player = SKSpriteNode(color: .blue, size: CGSize(width: 32, height: 32))
+        player?.position = CGPoint(x: 0, y: -size.height / 2 + (player?.size.height ?? 0) + 50)
+        player?.zPosition = 10
         player?.physicsBody = SKPhysicsBody(rectangleOf: player!.size)
         player?.physicsBody?.isDynamic = true
         player?.physicsBody?.affectedByGravity = false
         player?.physicsBody?.allowsRotation = false
         player?.physicsBody?.categoryBitMask = PhysicsCategory.player
-        player?.physicsBody?.collisionBitMask = PhysicsCategory.none // No physical collisions for now
-        // Define what player contacts should be detected
+        player?.physicsBody?.collisionBitMask = PhysicsCategory.none
         player?.physicsBody?.contactTestBitMask = PhysicsCategory.gate | PhysicsCategory.barrel | PhysicsCategory.zombie
 
         if let player = player {
@@ -95,60 +124,52 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     func spawnProjectile() {
-        // Ensure player exists and get its position
         guard let player = self.player else { return }
         let startPosition = player.position
 
-        // Create the projectile node
         let projectile = SKSpriteNode(color: projectileColor, size: projectileSize)
-        projectile.position = CGPoint(x: startPosition.x, y: startPosition.y + player.size.height / 2) // Start slightly ahead of player
-        projectile.zPosition = 9 // Behind player, but above background/other layers
-
-        // Add physics body to projectile
+        projectile.position = CGPoint(x: startPosition.x, y: startPosition.y + player.size.height / 2)
+        projectile.zPosition = 9
         projectile.physicsBody = SKPhysicsBody(rectangleOf: projectile.size)
         projectile.physicsBody?.isDynamic = true
         projectile.physicsBody?.affectedByGravity = false
         projectile.physicsBody?.allowsRotation = false
         projectile.physicsBody?.categoryBitMask = PhysicsCategory.projectile
-        projectile.physicsBody?.collisionBitMask = PhysicsCategory.none // No physical collisions
-        // Define what projectile contacts should be detected
+        projectile.physicsBody?.collisionBitMask = PhysicsCategory.none
         projectile.physicsBody?.contactTestBitMask = PhysicsCategory.gate | PhysicsCategory.barrel | PhysicsCategory.zombie
 
-        // Add to scene
-        addChild(projectile)
+        projectileLayer.addChild(projectile)
 
-        // --- Calculate movement --- 
-        // Destination y-coordinate (well off the top screen edge)
+        // Movement action remains the same, as its target Y is absolute
         let destinationY = size.height / 2 + projectile.size.height
-        // Distance to travel
-        let distance = destinationY - projectile.position.y
-        // Time = Distance / Speed
+        let distance = destinationY - projectile.position.y // Position relative to scene
         let duration = TimeInterval(distance / projectileSpeed)
-
-        // Create actions
         let moveAction = SKAction.moveTo(y: destinationY, duration: duration)
-        let removeAction = SKAction.removeFromParent() // Action to remove the node
-
-        // Combine actions into a sequence
-        let sequenceAction = SKAction.sequence([moveAction, removeAction])
-
-        // Run the sequence on the projectile
-        projectile.run(sequenceAction)
+        let removeAction = SKAction.removeFromParent()
+        projectile.run(SKAction.sequence([moveAction, removeAction]))
     }
 
     func spawnTestGate() {
-        // Temporary function to test gate logic
-        let testGate = GateNode(initialValue: -50) // Example initial value
-        // Position it above the player start area
-        testGate.position = CGPoint(x: 0, y: 100)
-        testGate.zPosition = 5 // Behind projectiles/player, above background
-        addChild(testGate)
+        let testGate = GateNode(initialValue: -50)
+        // Position relative to worldNode's origin
+        testGate.position = CGPoint(x: 0, y: size.height * 0.75) // Position higher up initially
+        testGate.zPosition = 5
+        // Add gate to the objectLayer within worldNode
+        objectLayer.addChild(testGate)
 
-        // Add another gate for variety
         let testGate2 = GateNode(initialValue: -20)
-        testGate2.position = CGPoint(x: -size.width / 4, y: 250)
+        testGate2.position = CGPoint(x: -size.width / 4, y: size.height * 1.25) // Position even higher
         testGate2.zPosition = 5
-        addChild(testGate2)
+        objectLayer.addChild(testGate2)
+    }
+
+    func spawnTestBarrel() {
+        let testBarrel = BarrelNode(initialValue: 10)
+        // Position relative to worldNode's origin
+        testBarrel.position = CGPoint(x: size.width / 4, y: size.height * 1.0) // Position high up
+        testBarrel.zPosition = 5
+        // Add barrel to the objectLayer within worldNode
+        objectLayer.addChild(testBarrel)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -195,8 +216,34 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     override func update(_ currentTime: TimeInterval) {
-        // Called before each frame is rendered
-        // Game logic updates (scrolling, spawning, movement) will go here
+        // Initialize lastUpdateTime on the first frame
+        if lastUpdateTime == 0 {
+            lastUpdateTime = currentTime
+        }
+
+        // Calculate time elapsed since last frame
+        let deltaTime = currentTime - lastUpdateTime
+        lastUpdateTime = currentTime
+
+        // Scroll the world node
+        let distanceToScroll = scrollSpeed * CGFloat(deltaTime)
+        worldNode.position.y -= distanceToScroll
+
+        // Check and reposition background tiles
+        for tile in backgroundTiles {
+            // Get position of the tile relative to the scene
+            let tileScenePosition = convert(tile.position, from: worldNode)
+
+            // Check if the tile's top edge is completely below the screen's bottom edge
+            if tileScenePosition.y + tile.size.height / 2 < -self.size.height / 2 {
+                // Move the tile up by twice its height (within worldNode coordinates)
+                // so it's positioned directly above the other tile
+                tile.position.y += 2 * tile.size.height
+                print("Repositioned background tile") // Debug log
+            }
+        }
+        
+        // TODO: Add logic later to remove objects in objectLayer that scroll off the bottom of the screen
     }
 
     // MARK: - SKPhysicsContactDelegate Methods
@@ -227,9 +274,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                 projectileDidCollideWithGate(projectile: projectileNode, gate: gateNode)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.barrel) {
-            // Projectile hit Barrel (Keep placeholder for now)
-            if let projectileNode = firstBody.node {
-                 projectileDidCollideWithBarrel(projectile: projectileNode, barrel: secondBody.node)
+            // Projectile hit Barrel 
+            if let projectileNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
+                 projectileDidCollideWithBarrel(projectile: projectileNode, barrel: barrelNode)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
             // Projectile hit Zombie (Keep placeholder for now)
@@ -242,8 +289,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                 playerDidCollideWithGate(player: playerNode, gate: gateNode)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.barrel) {
-            // Player hit Barrel (Keep placeholder for now)
-             playerDidCollideWithBarrel(player: firstBody.node, barrel: secondBody.node)
+            // Player hit Barrel
+             if let playerNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
+                playerDidCollideWithBarrel(player: playerNode, barrel: barrelNode)
+             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
             // Player hit Zombie (Keep placeholder for now)
             playerDidCollideWithZombie(player: firstBody.node, zombie: secondBody.node)
@@ -257,10 +306,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         projectile.removeFromParent() // Remove projectile
     }
 
-    func projectileDidCollideWithBarrel(projectile: SKNode?, barrel: SKNode?) {
+    func projectileDidCollideWithBarrel(projectile: SKNode, barrel: BarrelNode) { // Note: BarrelNode type
         print("Handling Projectile-Barrel collision")
-        projectile?.removeFromParent()
-        // Barrel logic later
+        barrel.hitByProjectile() // Call the barrel's method
+        projectile.removeFromParent() // Remove projectile
     }
 
     func projectileDidCollideWithZombie(projectile: SKNode?, zombie: SKNode?) {
@@ -292,10 +341,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         gate.removeFromParent() // Remove gate after interaction
     }
 
-    func playerDidCollideWithBarrel(player: SKNode?, barrel: SKNode?) {
+    func playerDidCollideWithBarrel(player: SKNode, barrel: BarrelNode) { // Note: BarrelNode type
         print("Handling Player-Barrel collision")
-        barrel?.removeFromParent()
-        // Barrel logic later
+        let isHazard = barrel.playerContact() // Check if barrel is hazardous
+
+        if isHazard {
+            // Apply hazard effect (Placeholder)
+            print("*** HAZARD! Player hit active barrel. (Placeholder damage/effect) ***")
+            // Implement actual effect later (e.g., lose crowd members, game over)
+        } else {
+            // Player passed a depleted barrel, no negative effect
+             print("Player passed depleted barrel safely.")
+        }
+
+        barrel.removeFromParent() // Remove barrel after interaction
     }
 
     func playerDidCollideWithZombie(player: SKNode?, zombie: SKNode?) {
@@ -317,3 +376,17 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 //         // Handle collisions
 //     }
 // }
+
+// Helper extension to create a simple gradient texture (placeholder)
+extension SKTexture {
+    convenience init(size: CGSize, color: UIColor, darkerColor: UIColor) {
+        let coreImageContext = CIContext(options: nil)
+        let gradient = CIFilter(name: "CILinearGradient")!
+        gradient.setValue(CIVector(x: size.width/2, y: 0), forKey: "inputPoint0")
+        gradient.setValue(CIColor(color: darkerColor), forKey: "inputColor0")
+        gradient.setValue(CIVector(x: size.width/2, y: size.height), forKey: "inputPoint1")
+        gradient.setValue(CIColor(color: color), forKey: "inputColor1")
+        let gradientImage = coreImageContext.createCGImage(gradient.outputImage!, from: CGRect(origin: .zero, size: size))
+        self.init(cgImage: gradientImage!)
+    }
+}
