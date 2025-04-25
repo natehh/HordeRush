@@ -13,32 +13,32 @@ class GameViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         if let view = self.view as! SKView? {
-            // Load the SKScene from 'GameScene.sks'
-            if let scene = SKScene(fileNamed: "GameScene") {
-                // Set the scale mode to scale to fit the window
-                scene.scaleMode = .aspectFill
-                
-                // Present the scene
-                view.presentScene(scene)
-            }
-            
+            // Create the scene programmatically
+            let scene = GameScene(size: view.bounds.size)
+
+            // Set the scale mode (adjust if needed, .resizeFill is also common)
+            scene.scaleMode = .aspectFill
+
+            // Present the scene
+            view.presentScene(scene)
+
+            // Optimisation
             view.ignoresSiblingOrder = true
-            
-            view.showsFPS = true
-            view.showsNodeCount = true
+
+            // Remove debug flags for production builds (can be re-enabled for debugging)
+            // view.showsFPS = true
+            // view.showsNodeCount = true
         }
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            return .allButUpsideDown
-        } else {
-            return .all
-        }
+        // Enforce portrait orientation as per the plan
+        return .portrait
     }
 
+    // Keep prefersStatusBarHidden for immersive gameplay
     override var prefersStatusBarHidden: Bool {
         return true
     }
