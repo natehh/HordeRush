@@ -182,31 +182,52 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     func spawnObjectRow() {
         let spawnY = (size.height / 2) - worldNode.position.y + 100 // Y pos relative to worldNode, above screen top
-
-        // Simple logic: Spawn one object per row for now
         guard !lanePositions.isEmpty else { return }
-        let randomLaneIndex = Int.random(in: 0..<lanePositions.count)
-        let spawnX = lanePositions[randomLaneIndex]
-
-        // Randomly choose object type
-        let objectTypeRoll = Double.random(in: 0...1)
-        let objectNode: SKNode
-
-        if objectTypeRoll < 0.6 { // 60% chance for Gate
-            let initialValue = Int.random(in: -100 ... -20)
-            objectNode = GateNode(initialValue: initialValue)
-             print("Spawning Gate at (\(spawnX), \(spawnY)) with value \(initialValue)")
-        } else { // 40% chance for Barrel
-            let initialValue = Int.random(in: 5 ... 25)
-            objectNode = BarrelNode(initialValue: initialValue)
-            print("Spawning Barrel at (\(spawnX), \(spawnY)) with value \(initialValue)")
-        }
-
-        objectNode.position = CGPoint(x: spawnX, y: spawnY)
-        objectNode.zPosition = 5
-        objectLayer.addChild(objectNode)
         
-        // Future enhancement: Could sometimes spawn two objects in different lanes
+        // --- Determine number of objects to spawn (e.g., 1 or 2) ---
+        let numberOfObjects = Int.random(in: 1...2) // Example: Spawn 1 or 2 items
+        var usedLaneIndices: Set<Int> = [] // Keep track of used lanes this row
+
+        for _ in 0..<numberOfObjects {
+            var randomLaneIndex = Int.random(in: 0..<lanePositions.count)
+            // Ensure we don't spawn two objects in the same lane
+            while usedLaneIndices.contains(randomLaneIndex) {
+                randomLaneIndex = Int.random(in: 0..<lanePositions.count)
+            }
+            usedLaneIndices.insert(randomLaneIndex)
+            
+            let spawnX = lanePositions[randomLaneIndex]
+
+            // --- Randomly choose object type --- 
+            let objectTypeRoll = Double.random(in: 0...1)
+            let objectNode: SKNode
+            var nodeDescription = ""
+
+            if objectTypeRoll < 0.5 { // 50% chance Gate
+                let initialValue = Int.random(in: -100 ... -20)
+                objectNode = GateNode(initialValue: initialValue)
+                nodeDescription = "Gate(value: \(initialValue))"
+            } else if objectTypeRoll < 0.8 { // 30% chance Barrel (0.5 to 0.8)
+                let initialValue = Int.random(in: 5 ... 25)
+                objectNode = BarrelNode(initialValue: initialValue)
+                nodeDescription = "Barrel(value: \(initialValue))"
+            } else { // 20% chance Zombie (0.8 to 1.0)
+                objectNode = ZombieNode()
+                nodeDescription = "Zombie"
+            }
+
+            print("Spawning \(nodeDescription) at (\(spawnX.rounded()), \(spawnY.rounded()))")
+
+            objectNode.position = CGPoint(x: spawnX, y: spawnY)
+            // Assign slightly different zPositions if needed for visual overlap
+            if objectNode is ZombieNode {
+                 objectNode.zPosition = 6
+            } else {
+                 objectNode.zPosition = 5
+            }
+           
+            objectLayer.addChild(objectNode)
+        }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -322,8 +343,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
             // Projectile hit Zombie (Keep placeholder for now)
-            if let projectileNode = firstBody.node {
-                 projectileDidCollideWithZombie(projectile: projectileNode, zombie: secondBody.node)
+            if let projectileNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
+                 projectileDidCollideWithZombie(projectile: projectileNode, zombie: zombieNode)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.gate) {
             // Player hit Gate
@@ -337,7 +358,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
              }
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
             // Player hit Zombie (Keep placeholder for now)
-            playerDidCollideWithZombie(player: firstBody.node, zombie: secondBody.node)
+            if let playerNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
+                playerDidCollideWithZombie(player: playerNode, zombie: zombieNode)
+            }
         }
     }
 
@@ -354,11 +377,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         projectile.removeFromParent() // Remove projectile
     }
 
-    func projectileDidCollideWithZombie(projectile: SKNode?, zombie: SKNode?) {
+    func projectileDidCollideWithZombie(projectile: SKNode, zombie: ZombieNode) { // Note: ZombieNode type
         print("Handling Projectile-Zombie collision")
-        projectile?.removeFromParent()
-        zombie?.removeFromParent()
-        // Zombie logic later
+        projectile.removeFromParent() // Remove projectile
+        zombie.hitByProjectile()       // Call zombie's method (which removes it)
     }
 
     func playerDidCollideWithGate(player: SKNode, gate: GateNode) { // Note: GateNode type
@@ -399,11 +421,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         barrel.removeFromParent() // Remove barrel after interaction
     }
 
-    func playerDidCollideWithZombie(player: SKNode?, zombie: SKNode?) {
+    func playerDidCollideWithZombie(player: SKNode, zombie: ZombieNode) { // Note: ZombieNode type
         print("Handling Player-Zombie collision - GAME OVER (placeholder)")
-        player?.removeFromParent()
-        zombie?.removeFromParent()
-        // Game Over logic later
+        
+        // Call zombie's contact method (which removes it)
+        zombie.playerContact() 
+        
+        // Game Over Logic:
+        player.removeFromParent() // Remove player node
+        // Stop game actions
+        self.removeAction(forKey: "shootingAction")
+        self.removeAction(forKey: "objectSpawnerAction")
+        // Could pause the scene, show a game over screen etc.
+        // self.isPaused = true 
+        // transitionToGameOverScene()
     }
 
     // Add custom methods for player setup, UI setup, spawning, etc. later
