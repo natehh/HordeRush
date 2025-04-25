@@ -33,6 +33,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private let projectileSpeed: CGFloat = 600.0 // Points per second
     private let fireRate: TimeInterval = 0.2 // Seconds between shots (5 shots/sec)
 
+    // Crowd Properties (Placeholder)
+    var crowdCount: Int = 1 // Start with the leader
+
     override func didMove(to view: SKView) {
         // Setup scene
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
@@ -47,6 +50,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // Start the shooting timer
         setupShooting()
+
+        // Spawn a test gate
+        spawnTestGate()
 
         // setupUI()
     }
@@ -130,6 +136,21 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         projectile.run(sequenceAction)
     }
 
+    func spawnTestGate() {
+        // Temporary function to test gate logic
+        let testGate = GateNode(initialValue: -50) // Example initial value
+        // Position it above the player start area
+        testGate.position = CGPoint(x: 0, y: 100)
+        testGate.zPosition = 5 // Behind projectiles/player, above background
+        addChild(testGate)
+
+        // Add another gate for variety
+        let testGate2 = GateNode(initialValue: -20)
+        testGate2.position = CGPoint(x: -size.width / 4, y: 250)
+        testGate2.zPosition = 5
+        addChild(testGate2)
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // Handle initial touch for dragging
         guard let touch = touches.first else { return }
@@ -199,85 +220,89 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             secondBody = bodyA
         }
 
-        // Check for specific collision pairs
+        // Updated Collision Checks
         if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.gate) {
             // Projectile hit Gate
-            print("Projectile hit Gate")
-            // Logic to increment gate value and destroy projectile will go here
-            if let projectileNode = firstBody.node {
-                 projectileDidCollideWithGate(projectile: projectileNode, gate: secondBody.node)
+            if let projectileNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
+                projectileDidCollideWithGate(projectile: projectileNode, gate: gateNode)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.barrel) {
-            // Projectile hit Barrel
-            print("Projectile hit Barrel")
-            // Logic to decrement barrel value and destroy projectile will go here
+            // Projectile hit Barrel (Keep placeholder for now)
             if let projectileNode = firstBody.node {
                  projectileDidCollideWithBarrel(projectile: projectileNode, barrel: secondBody.node)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
-            // Projectile hit Zombie
-            print("Projectile hit Zombie")
-            // Logic to damage/destroy zombie and destroy projectile will go here
+            // Projectile hit Zombie (Keep placeholder for now)
             if let projectileNode = firstBody.node {
                  projectileDidCollideWithZombie(projectile: projectileNode, zombie: secondBody.node)
             }
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.gate) {
             // Player hit Gate
-            print("Player hit Gate")
-            // Logic to apply gate effect (+/- crowd) will go here
-            playerDidCollideWithGate(player: firstBody.node, gate: secondBody.node)
+            if let playerNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
+                playerDidCollideWithGate(player: playerNode, gate: gateNode)
+            }
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.barrel) {
-            // Player hit Barrel
-            print("Player hit Barrel")
-            // Logic to handle barrel hazard will go here
+            // Player hit Barrel (Keep placeholder for now)
              playerDidCollideWithBarrel(player: firstBody.node, barrel: secondBody.node)
         } else if (firstBody.categoryBitMask == PhysicsCategory.player) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
-            // Player hit Zombie
-            print("Player hit Zombie")
-            // Logic for game over or player damage will go here
+            // Player hit Zombie (Keep placeholder for now)
             playerDidCollideWithZombie(player: firstBody.node, zombie: secondBody.node)
         }
-        // Add more collision checks as needed
     }
 
-    // Placeholder collision handling functions
-    func projectileDidCollideWithGate(projectile: SKNode?, gate: SKNode?) {
+    // Updated Collision Handling Functions
+    func projectileDidCollideWithGate(projectile: SKNode, gate: GateNode) { // Note: GateNode type
         print("Handling Projectile-Gate collision")
-        projectile?.removeFromParent() // Example: Remove projectile
-        // Add logic to update gate value here later
+        gate.hitByProjectile()       // Call the gate's method
+        projectile.removeFromParent() // Remove projectile
     }
 
     func projectileDidCollideWithBarrel(projectile: SKNode?, barrel: SKNode?) {
         print("Handling Projectile-Barrel collision")
-        projectile?.removeFromParent() // Example: Remove projectile
-        // Add logic to update barrel value here later
+        projectile?.removeFromParent()
+        // Barrel logic later
     }
 
     func projectileDidCollideWithZombie(projectile: SKNode?, zombie: SKNode?) {
         print("Handling Projectile-Zombie collision")
-        projectile?.removeFromParent() // Example: Remove projectile
-        zombie?.removeFromParent()     // Example: Remove zombie
-        // Add score update etc. here later
+        projectile?.removeFromParent()
+        zombie?.removeFromParent()
+        // Zombie logic later
     }
 
-    func playerDidCollideWithGate(player: SKNode?, gate: SKNode?) {
+    func playerDidCollideWithGate(player: SKNode, gate: GateNode) { // Note: GateNode type
         print("Handling Player-Gate collision")
-        // Logic to check gate value and adjust crowd count later
-        gate?.removeFromParent() // Example: Remove gate after interaction
+        let value = gate.playerContact() // Get the final value from the gate
+
+        // Apply crowd effect (Placeholder logic)
+        if value > 0 {
+            print("Adding \(value) to crowd")
+            crowdCount += value
+        } else {
+            // Only subtract if the value is still negative AND non-zero
+            // (Could refine this rule - e.g., always subtract if negative?)
+            if value < 0 {
+                 print("Subtracting \(abs(value)) from crowd")
+                 crowdCount = max(1, crowdCount + value) // Ensure crowd count doesn't go below 1 (the leader)
+            }
+        }
+        print("New crowd count (placeholder): \(crowdCount)")
+        // Update UI later
+
+        gate.removeFromParent() // Remove gate after interaction
     }
 
     func playerDidCollideWithBarrel(player: SKNode?, barrel: SKNode?) {
         print("Handling Player-Barrel collision")
-        // Logic to check barrel state (hazard?) and apply effect later
-        // Possibly remove player/crowd members or trigger game over
-        barrel?.removeFromParent() // Example: Remove barrel
+        barrel?.removeFromParent()
+        // Barrel logic later
     }
 
     func playerDidCollideWithZombie(player: SKNode?, zombie: SKNode?) {
         print("Handling Player-Zombie collision - GAME OVER (placeholder)")
-        // Game Over logic will go here
-        player?.removeFromParent() // Example: Remove player
-        zombie?.removeFromParent() // Example: Remove zombie
+        player?.removeFromParent()
+        zombie?.removeFromParent()
+        // Game Over logic later
     }
 
     // Add custom methods for player setup, UI setup, spawning, etc. later
