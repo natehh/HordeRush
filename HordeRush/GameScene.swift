@@ -11,20 +11,30 @@ import SpriteKit
 
 class GameScene: SKScene {
 
-    // Properties for player, score, etc. will go here later
+    // Player Properties
     private var player: SKSpriteNode?
     private var lastTouchLocation: CGPoint? // Stores the last position of the touch
 
+    // Projectile Properties
+    private let projectileSize = CGSize(width: 5, height: 10)
+    private let projectileColor = UIColor.yellow // Use yellow for visibility
+    private let projectileSpeed: CGFloat = 600.0 // Points per second
+    private let fireRate: TimeInterval = 0.2 // Seconds between shots (5 shots/sec)
+
     override func didMove(to view: SKView) {
-        // Setup scene (anchor point, background color, physics world)
-        anchorPoint = CGPoint(x: 0.5, y: 0.5) // Center anchor
-        backgroundColor = .darkGray // Placeholder background
+        // Setup scene
+        anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        backgroundColor = .darkGray
+
+        // Setup player
+        setupPlayer()
+
+        // Start the shooting timer
+        setupShooting()
 
         // Setup physics world contact delegate
-        // physicsWorld.contactDelegate = self // Uncomment when physics bodies are added
+        // physicsWorld.contactDelegate = self
 
-        // Add initial game elements (player, UI)
-        setupPlayer()
         // setupUI()
     }
 
@@ -38,6 +48,53 @@ class GameScene: SKScene {
         if let player = player {
             addChild(player)
         }
+    }
+
+    func setupShooting() {
+        // Create the sequence: Wait, then Spawn
+        let waitAction = SKAction.wait(forDuration: fireRate)
+        let spawnAction = SKAction.run { [weak self] in // Use weak self to avoid retain cycles
+            self?.spawnProjectile()
+        }
+        let sequenceAction = SKAction.sequence([waitAction, spawnAction])
+
+        // Repeat the sequence forever
+        let repeatAction = SKAction.repeatForever(sequenceAction)
+
+        // Run the repeating action on the scene
+        self.run(repeatAction, withKey: "shootingAction") // Add a key to potentially stop it later
+    }
+
+    func spawnProjectile() {
+        // Ensure player exists and get its position
+        guard let player = self.player else { return }
+        let startPosition = player.position
+
+        // Create the projectile node
+        let projectile = SKSpriteNode(color: projectileColor, size: projectileSize)
+        projectile.position = CGPoint(x: startPosition.x, y: startPosition.y + player.size.height / 2) // Start slightly ahead of player
+        projectile.zPosition = 9 // Behind player, but above background/other layers
+
+        // Add to scene
+        addChild(projectile)
+
+        // --- Calculate movement --- 
+        // Destination y-coordinate (well off the top screen edge)
+        let destinationY = size.height / 2 + projectile.size.height
+        // Distance to travel
+        let distance = destinationY - projectile.position.y
+        // Time = Distance / Speed
+        let duration = TimeInterval(distance / projectileSpeed)
+
+        // Create actions
+        let moveAction = SKAction.moveTo(y: destinationY, duration: duration)
+        let removeAction = SKAction.removeFromParent() // Action to remove the node
+
+        // Combine actions into a sequence
+        let sequenceAction = SKAction.sequence([moveAction, removeAction])
+
+        // Run the sequence on the projectile
+        projectile.run(sequenceAction)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
