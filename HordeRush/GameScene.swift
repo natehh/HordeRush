@@ -43,6 +43,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var backgroundTiles: [SKSpriteNode] = []
     private let scrollSpeed: CGFloat = 150.0 // Points per second for world scroll
     private var lastUpdateTime: TimeInterval = 0
+    private let spawnInterval: TimeInterval = 1.5 // Time between spawning rows
+    // Define lanes for spawning
+    private var lanePositions: [CGFloat] = []
 
     override func didMove(to view: SKView) {
         // Setup scene
@@ -59,6 +62,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVector(dx: 0, dy: 0)
         physicsWorld.contactDelegate = self
 
+        // Calculate lane positions based on scene size
+        calculateLanePositions()
+
         // Setup background
         setupBackground()
 
@@ -68,11 +74,26 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // Start the shooting timer
         setupShooting()
 
-        // Spawn test objects (added to objectLayer within worldNode)
-        spawnTestGate()
-        spawnTestBarrel()
+        // Start the object spawner
+        setupObjectSpawner()
 
         // setupUI()
+    }
+
+    func calculateLanePositions() {
+        // Example: 3 lanes
+        let laneWidth = size.width / 3
+        lanePositions = [
+            -laneWidth, // Left
+             0,         // Center
+             laneWidth  // Right
+        ]
+        // Adjusting slightly to not be exactly on edge if needed:
+        // lanePositions = [
+        //     -size.width / 4,
+        //      0,
+        //      size.width / 4
+        // ]
     }
 
     func setupBackground() {
@@ -149,27 +170,43 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         projectile.run(SKAction.sequence([moveAction, removeAction]))
     }
 
-    func spawnTestGate() {
-        let testGate = GateNode(initialValue: -50)
-        // Position relative to worldNode's origin
-        testGate.position = CGPoint(x: 0, y: size.height * 0.75) // Position higher up initially
-        testGate.zPosition = 5
-        // Add gate to the objectLayer within worldNode
-        objectLayer.addChild(testGate)
-
-        let testGate2 = GateNode(initialValue: -20)
-        testGate2.position = CGPoint(x: -size.width / 4, y: size.height * 1.25) // Position even higher
-        testGate2.zPosition = 5
-        objectLayer.addChild(testGate2)
+    func setupObjectSpawner() {
+        let waitAction = SKAction.wait(forDuration: spawnInterval)
+        let spawnAction = SKAction.run { [weak self] in
+            self?.spawnObjectRow()
+        }
+        let sequenceAction = SKAction.sequence([waitAction, spawnAction])
+        let repeatAction = SKAction.repeatForever(sequenceAction)
+        self.run(repeatAction, withKey: "objectSpawnerAction")
     }
 
-    func spawnTestBarrel() {
-        let testBarrel = BarrelNode(initialValue: 10)
-        // Position relative to worldNode's origin
-        testBarrel.position = CGPoint(x: size.width / 4, y: size.height * 1.0) // Position high up
-        testBarrel.zPosition = 5
-        // Add barrel to the objectLayer within worldNode
-        objectLayer.addChild(testBarrel)
+    func spawnObjectRow() {
+        let spawnY = (size.height / 2) - worldNode.position.y + 100 // Y pos relative to worldNode, above screen top
+
+        // Simple logic: Spawn one object per row for now
+        guard !lanePositions.isEmpty else { return }
+        let randomLaneIndex = Int.random(in: 0..<lanePositions.count)
+        let spawnX = lanePositions[randomLaneIndex]
+
+        // Randomly choose object type
+        let objectTypeRoll = Double.random(in: 0...1)
+        let objectNode: SKNode
+
+        if objectTypeRoll < 0.6 { // 60% chance for Gate
+            let initialValue = Int.random(in: -100 ... -20)
+            objectNode = GateNode(initialValue: initialValue)
+             print("Spawning Gate at (\(spawnX), \(spawnY)) with value \(initialValue)")
+        } else { // 40% chance for Barrel
+            let initialValue = Int.random(in: 5 ... 25)
+            objectNode = BarrelNode(initialValue: initialValue)
+            print("Spawning Barrel at (\(spawnX), \(spawnY)) with value \(initialValue)")
+        }
+
+        objectNode.position = CGPoint(x: spawnX, y: spawnY)
+        objectNode.zPosition = 5
+        objectLayer.addChild(objectNode)
+        
+        // Future enhancement: Could sometimes spawn two objects in different lanes
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -216,12 +253,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     override func update(_ currentTime: TimeInterval) {
-        // Initialize lastUpdateTime on the first frame
         if lastUpdateTime == 0 {
             lastUpdateTime = currentTime
         }
-
-        // Calculate time elapsed since last frame
         let deltaTime = currentTime - lastUpdateTime
         lastUpdateTime = currentTime
 
@@ -229,21 +263,29 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let distanceToScroll = scrollSpeed * CGFloat(deltaTime)
         worldNode.position.y -= distanceToScroll
 
-        // Check and reposition background tiles
+        // --- Background Tile Repositioning --- 
         for tile in backgroundTiles {
-            // Get position of the tile relative to the scene
             let tileScenePosition = convert(tile.position, from: worldNode)
-
-            // Check if the tile's top edge is completely below the screen's bottom edge
             if tileScenePosition.y + tile.size.height / 2 < -self.size.height / 2 {
-                // Move the tile up by twice its height (within worldNode coordinates)
-                // so it's positioned directly above the other tile
                 tile.position.y += 2 * tile.size.height
-                print("Repositioned background tile") // Debug log
             }
         }
         
-        // TODO: Add logic later to remove objects in objectLayer that scroll off the bottom of the screen
+        // --- Object Cleanup --- 
+        for node in objectLayer.children {
+            // Get position relative to the scene
+            let nodeScenePosition = convert(node.position, from: objectLayer) // Get position within scene
+            
+            // Check if the node is completely below the screen bottom edge
+            // Use node.frame.maxY for top edge calculation relative to node's anchor point if needed
+            // Assuming anchor point 0.5, 0.5:
+            let nodeTopY = nodeScenePosition.y + node.frame.size.height / 2 
+
+            if nodeTopY < -self.size.height / 2 { 
+                // print("Removing node that scrolled off bottom: \(node)")
+                node.removeFromParent()
+            }
+        }
     }
 
     // MARK: - SKPhysicsContactDelegate Methods
