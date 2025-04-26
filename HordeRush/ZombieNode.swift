@@ -27,7 +27,7 @@ class ZombieNode: SKSpriteNode {
         physicsBody?.isDynamic = false // Zombies move only due to world scroll
         physicsBody?.categoryBitMask = PhysicsCategory.zombie
         physicsBody?.collisionBitMask = PhysicsCategory.none // No physical collisions
-        physicsBody?.contactTestBitMask = PhysicsCategory.projectile | PhysicsCategory.player // Detect hits
+        physicsBody?.contactTestBitMask = PhysicsCategory.projectile | PhysicsCategory.player | PhysicsCategory.crowdMember // Detect hits from player, projectiles, AND crowd
     }
     
     // Optional: Add a simple animation for visual feedback

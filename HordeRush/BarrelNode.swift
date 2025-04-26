@@ -41,7 +41,7 @@ class BarrelNode: SKSpriteNode {
         physicsBody?.isDynamic = false
         physicsBody?.categoryBitMask = PhysicsCategory.barrel
         physicsBody?.collisionBitMask = PhysicsCategory.none
-        physicsBody?.contactTestBitMask = PhysicsCategory.projectile | PhysicsCategory.player
+        physicsBody?.contactTestBitMask = PhysicsCategory.projectile | PhysicsCategory.player | PhysicsCategory.crowdMember
     }
 
     private func updateLabel() {

@@ -387,6 +387,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let firstBody: SKPhysicsBody
         let secondBody: SKPhysicsBody
 
+        // Ensure firstBody always has the lower category bitmask
         if bodyA.categoryBitMask < bodyB.categoryBitMask {
             firstBody = bodyA
             secondBody = bodyB
@@ -395,48 +396,49 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             secondBody = bodyA
         }
 
-        // Updated Collision Checks
-        if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.gate) {
-            // Projectile hit Gate
-            if let projectileNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
-                projectileDidCollideWithGate(projectile: projectileNode, gate: gateNode)
+        // --- Projectile Collisions ---
+        if firstBody.categoryBitMask == PhysicsCategory.projectile {
+            if secondBody.categoryBitMask == PhysicsCategory.gate {
+                if let projectileNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
+                    projectileDidCollideWithGate(projectile: projectileNode, gate: gateNode)
+                }
+            } else if secondBody.categoryBitMask == PhysicsCategory.barrel {
+                if let projectileNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
+                     projectileDidCollideWithBarrel(projectile: projectileNode, barrel: barrelNode)
+                }
+            } else if secondBody.categoryBitMask == PhysicsCategory.zombie {
+                if let projectileNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
+                     projectileDidCollideWithZombie(projectile: projectileNode, zombie: zombieNode)
+                }
             }
-        } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.barrel) {
-            // Projectile hit Barrel 
-            if let projectileNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
-                 projectileDidCollideWithBarrel(projectile: projectileNode, barrel: barrelNode)
-            }
-        } else if (firstBody.categoryBitMask == PhysicsCategory.projectile) && (secondBody.categoryBitMask == PhysicsCategory.zombie) {
-            // Projectile hit Zombie (Keep placeholder for now)
-            if let projectileNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
-                 projectileDidCollideWithZombie(projectile: projectileNode, zombie: zombieNode)
-            }
+        // --- Player Collisions ---
         } else if firstBody.categoryBitMask == PhysicsCategory.player {
-            // Player vs Gate/Barrel/Zombie
-            if secondBody.categoryBitMask == PhysicsCategory.gate { /* Gate */
+            if secondBody.categoryBitMask == PhysicsCategory.gate {
                 if let playerNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
                     playerDidCollideWithGate(player: playerNode, gate: gateNode)
                 }
-            } else if secondBody.categoryBitMask == PhysicsCategory.barrel { /* Barrel */
+            } else if secondBody.categoryBitMask == PhysicsCategory.barrel {
                  if let playerNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
                     playerDidCollideWithBarrel(player: playerNode, barrel: barrelNode)
                  }
-            } else if secondBody.categoryBitMask == PhysicsCategory.zombie { /* Zombie */
+            } else if secondBody.categoryBitMask == PhysicsCategory.zombie {
                  if let playerNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
                     playerDidCollideWithZombie(player: playerNode, zombie: zombieNode)
                  }
             }
-        } else if firstBody.categoryBitMask == PhysicsCategory.crowdMember {
-            // CrowdMember vs Barrel/Zombie
-             if secondBody.categoryBitMask == PhysicsCategory.barrel {
-                if let memberNode = firstBody.node as? SKSpriteNode, let barrelNode = secondBody.node as? BarrelNode {
-                    crowdMemberDidCollideWithBarrel(member: memberNode, barrel: barrelNode)
-                 }
-            } else if secondBody.categoryBitMask == PhysicsCategory.zombie {
-                 if let memberNode = firstBody.node as? SKSpriteNode, let zombieNode = secondBody.node as? ZombieNode {
-                    crowdMemberDidCollideWithZombie(member: memberNode, zombie: zombieNode)
-                 }
+        // --- Barrel Collisions (specifically with CrowdMember) ---
+        // Barrel (8) vs CrowdMember (32) -> Barrel is firstBody
+        } else if firstBody.categoryBitMask == PhysicsCategory.barrel && secondBody.categoryBitMask == PhysicsCategory.crowdMember {
+            print("DEBUG: Entered Barrel vs CrowdMember collision branch") // Add logging
+            if let barrelNode = firstBody.node as? BarrelNode, let memberNode = secondBody.node as? SKSpriteNode {
+                 crowdMemberDidCollideWithBarrel(member: memberNode, barrel: barrelNode)
             }
+        // --- Zombie Collisions (specifically with CrowdMember) ---
+        // Zombie (16) vs CrowdMember (32) -> Zombie is firstBody
+        } else if firstBody.categoryBitMask == PhysicsCategory.zombie && secondBody.categoryBitMask == PhysicsCategory.crowdMember {
+             if let zombieNode = firstBody.node as? ZombieNode, let memberNode = secondBody.node as? SKSpriteNode {
+                 crowdMemberDidCollideWithZombie(member: memberNode, zombie: zombieNode)
+             }
         }
     }
 
@@ -484,15 +486,22 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     func playerDidCollideWithBarrel(player: SKNode, barrel: BarrelNode) {
         print("Handling Player-Barrel collision (Player Leader)")
         let isHazard = barrel.playerContact()
-        // Player leader hitting a barrel might have its own effect later?
-        // For now, the main damage is handled by individual crowd members hitting it.
+        
         if isHazard {
-            print("Player leader hit active barrel.")
-            // Barrel is hazardous, but member collisions handle removal
-             barrel.removeFromParent() // Remove barrel after player hits it
+            print("Player leader hit active barrel!")
+            if crowdMembers.isEmpty {
+                print("Player leader hit barrel with no crowd left - GAME OVER")
+                triggerGameOver()
+                // Optionally remove barrel here too, though game over stops updates
+                // barrel.removeFromParent()
+            } else {
+                print("Player leader hit barrel! Sacrificing one crowd member.")
+                removeCrowdMembers(count: 1)
+                // Do NOT remove the barrel here - let it potentially hit a member
+            }
         } else {
              print("Player passed depleted barrel location.")
-             barrel.removeFromParent() 
+             // Depleted barrels are harmless and should already be gone or will be cleaned up
         }
     }
 
@@ -661,13 +670,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
              member.removeFromParent()
              print("Crowd count now: \(crowdCount)")
              
-             // Optional: Maybe damage the barrel too?
-             // barrel.hitByProjectile() 
-             // Optional: Remove barrel after it hits one member?
-             // barrel.removeFromParent()
+             // Remove the barrel after it hits the first crowd member
+             barrel.removeFromParent()
+             
         } else {
             // Member hit an already depleted barrel (which should be gone, but safety check)
             print("Crowd member hit depleted barrel.")
+            // Might as well remove the depleted barrel if somehow still here
+            barrel.removeFromParent()
         }
     }
 }
