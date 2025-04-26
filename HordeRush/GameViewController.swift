@@ -15,8 +15,8 @@ class GameViewController: UIViewController {
         super.viewDidLoad()
 
         if let view = self.view as! SKView? {
-            // Create the scene programmatically
-            let scene = GameScene(size: view.bounds.size)
+            // Create the scene programmatically - START WITH MAIN MENU
+            let scene = MainMenuScene(size: view.bounds.size)
 
             // Set the scale mode (adjust if needed, .resizeFill is also common)
             scene.scaleMode = .aspectFill
