@@ -35,8 +35,19 @@ class GameOverScene: SKScene {
         scoreLabel.fontColor = SKColor.white
         scoreLabel.position = CGPoint(x: self.size.width / 2, y: self.size.height * 0.55)
         addChild(scoreLabel)
-        
-        // TODO: Add High Score display later using UserDefaults
+
+        // --- High Score Display ---
+        let defaults = UserDefaults.standard
+        let highScoreKey = "highScore" // Ensure this key matches the one in GameScene
+        let highScore = defaults.integer(forKey: highScoreKey) // Defaults to 0 if not set
+
+        let highScoreLabel = SKLabelNode(fontNamed: "ArialMT")
+        highScoreLabel.text = "High Score: \(highScore)"
+        highScoreLabel.fontSize = 22 // Slightly smaller than final score
+        highScoreLabel.fontColor = SKColor.yellow // Different color for distinction
+        highScoreLabel.position = CGPoint(x: self.size.width / 2, y: self.size.height * 0.50) // Position below final score
+        addChild(highScoreLabel)
+        // -------------------------
 
         // Retry Button
         let retryButton = SKLabelNode(fontNamed: "Arial-BoldMT")

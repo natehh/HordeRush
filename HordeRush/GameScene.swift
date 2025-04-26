@@ -228,52 +228,101 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     func spawnObjectRow() {
         let spawnY = (size.height / 2) - worldNode.position.y + 100 // Y pos relative to worldNode, above screen top
-        guard !lanePositions.isEmpty else { return }
-        
-        // --- Determine number of objects to spawn (e.g., 1 or 2) ---
-        let numberOfObjects = Int.random(in: 1...2) // Example: Spawn 1 or 2 items
-        var usedLaneIndices: Set<Int> = [] // Keep track of used lanes this row
-
-        for _ in 0..<numberOfObjects {
-            var randomLaneIndex = Int.random(in: 0..<lanePositions.count)
-            // Ensure we don't spawn two objects in the same lane
-            while usedLaneIndices.contains(randomLaneIndex) {
-                randomLaneIndex = Int.random(in: 0..<lanePositions.count)
-            }
-            usedLaneIndices.insert(randomLaneIndex)
-            
-            let spawnX = lanePositions[randomLaneIndex]
-
-            // --- Randomly choose object type --- 
-            let objectTypeRoll = Double.random(in: 0...1)
-            let objectNode: SKNode
-            var nodeDescription = ""
-
-            if objectTypeRoll < 0.5 { // 50% chance Gate
-                let initialValue = Int.random(in: -30 ... -5)
-                objectNode = GateNode(initialValue: initialValue)
-                nodeDescription = "Gate(value: \(initialValue))"
-            } else if objectTypeRoll < 0.8 { // 30% chance Barrel (0.5 to 0.8)
-                let initialValue = Int.random(in: 5 ... 25)
-                objectNode = BarrelNode(initialValue: initialValue)
-                nodeDescription = "Barrel(value: \(initialValue))"
-            } else { // 20% chance Zombie (0.8 to 1.0)
-                objectNode = ZombieNode()
-                nodeDescription = "Zombie"
-            }
-
-            print("Spawning \(nodeDescription) at (\(spawnX.rounded()), \(spawnY.rounded()))")
-
-            objectNode.position = CGPoint(x: spawnX, y: spawnY)
-            // Assign slightly different zPositions if needed for visual overlap
-            if objectNode is ZombieNode {
-                 objectNode.zPosition = 6
-            } else {
-                 objectNode.zPosition = 5
-            }
-           
-            objectLayer.addChild(objectNode)
+        guard lanePositions.count == 3 else { // Assumes 3 lanes are defined
+            print("Error: Expected 3 lane positions, found \(lanePositions.count)")
+            return
         }
+        let leftLaneX = lanePositions[0]
+        let centerLaneX = lanePositions[1]
+        let rightLaneX = lanePositions[2]
+
+        // --- Define Helper Functions for Creation & Adding ---
+        func createGateOrBarrel() -> SKNode {
+            let isGate = Bool.random() // 50/50 chance Gate vs Barrel
+            if isGate {
+                let initialValue = Int.random(in: -30 ... -5)
+                let node = GateNode(initialValue: initialValue)
+                // print("Creating Gate(value: \(initialValue))") // Keep print in addNodeToLayer
+                return node
+            } else {
+                let initialValue = Int.random(in: 5 ... 25)
+                let node = BarrelNode(initialValue: initialValue)
+                // print("Creating Barrel(value: \(initialValue))") // Keep print in addNodeToLayer
+                return node
+            }
+        }
+
+        func createZombie() -> SKNode {
+             // print("Creating Zombie") // Keep print in addNodeToLayer
+             return ZombieNode()
+        }
+
+        func addNodeToLayer(_ node: SKNode, position: CGPoint, description: String) {
+            node.position = position
+            if node is ZombieNode {
+                 node.zPosition = 6
+            } else {
+                 node.zPosition = 5
+            }
+            objectLayer.addChild(node)
+             print("Spawning \(description) at (\(position.x.rounded()), \(position.y.rounded()))")
+        }
+        // ----------------------------------------------------
+
+        // --- Define and Choose Spawn Pattern --- 
+        enum SpawnPattern: CaseIterable {
+            case zombieCenter
+            case gateOrBarrelLeft
+            case gateOrBarrelRight
+            case zombieCenterGateOrBarrelLeft
+            case zombieCenterGateOrBarrelRight
+            case gateOrBarrelLeftGateOrBarrelRight
+            // Could add weights here later if needed
+        }
+
+        let chosenPattern = SpawnPattern.allCases.randomElement()!
+        // ---------------------------------------
+
+        // --- Spawn Objects Based on Pattern ---
+        switch chosenPattern {
+        case .zombieCenter:
+            let zombie = createZombie()
+            addNodeToLayer(zombie, position: CGPoint(x: centerLaneX, y: spawnY), description: "Zombie")
+
+        case .gateOrBarrelLeft:
+            let node = createGateOrBarrel()
+            let desc = node is GateNode ? "Gate" : "Barrel"
+            addNodeToLayer(node, position: CGPoint(x: leftLaneX, y: spawnY), description: desc)
+
+        case .gateOrBarrelRight:
+            let node = createGateOrBarrel()
+            let desc = node is GateNode ? "Gate" : "Barrel"
+            addNodeToLayer(node, position: CGPoint(x: rightLaneX, y: spawnY), description: desc)
+
+        case .zombieCenterGateOrBarrelLeft:
+            let zombie = createZombie()
+            addNodeToLayer(zombie, position: CGPoint(x: centerLaneX, y: spawnY), description: "Zombie")
+            let node = createGateOrBarrel()
+            let desc = node is GateNode ? "Gate" : "Barrel"
+            addNodeToLayer(node, position: CGPoint(x: leftLaneX, y: spawnY), description: desc)
+
+        case .zombieCenterGateOrBarrelRight:
+            let zombie = createZombie()
+            addNodeToLayer(zombie, position: CGPoint(x: centerLaneX, y: spawnY), description: "Zombie")
+            let node = createGateOrBarrel()
+            let desc = node is GateNode ? "Gate" : "Barrel"
+            addNodeToLayer(node, position: CGPoint(x: rightLaneX, y: spawnY), description: desc)
+
+        case .gateOrBarrelLeftGateOrBarrelRight:
+            let nodeLeft = createGateOrBarrel()
+            let descLeft = nodeLeft is GateNode ? "Gate" : "Barrel"
+            addNodeToLayer(nodeLeft, position: CGPoint(x: leftLaneX, y: spawnY), description: descLeft)
+            
+            let nodeRight = createGateOrBarrel()
+            let descRight = nodeRight is GateNode ? "Gate" : "Barrel"
+            addNodeToLayer(nodeRight, position: CGPoint(x: rightLaneX, y: spawnY), description: descRight)
+        }
+        // ---------------------------------------
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -541,6 +590,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // Ensure view exists
         guard let view = self.view else { return }
         
+        // --- High Score Logic ---
+        let defaults = UserDefaults.standard
+        let highScoreKey = "highScore" // Key for UserDefaults
+        let currentHighScore = defaults.integer(forKey: highScoreKey) // Get current high score (defaults to 0)
+
+        if score > currentHighScore {
+            defaults.set(score, forKey: highScoreKey) // Save new high score
+            print("New High Score! \(score) saved.")
+            // defaults.synchronize() // Not strictly needed in modern iOS, but sometimes used
+        } else {
+            print("Score \(score) did not beat high score \(currentHighScore).")
+        }
+        // ------------------------
+
         // Create the Game Over Scene, passing the final score
         let gameOverScene = GameOverScene(size: view.bounds.size, score: self.score)
         gameOverScene.scaleMode = self.scaleMode // Match scale mode
@@ -582,7 +645,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             member.physicsBody?.contactTestBitMask = PhysicsCategory.zombie | PhysicsCategory.barrel
             
             // Assign a unique name to identify specific members if needed later
-            // member.name = "crowdMember_\\(UUID().uuidString)" 
+            // member.name = "crowdMember_\(UUID().uuidString)" 
             
             crowdMembers.append(member)
             addChild(member)
