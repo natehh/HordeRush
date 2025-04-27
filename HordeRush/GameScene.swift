@@ -62,7 +62,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private let objectLayer = SKNode()       // For gates, barrels, zombies
     private let projectileLayer = SKNode()   // For projectiles
     private var backgroundTiles: [SKSpriteNode] = []
-    private let scrollSpeed: CGFloat = 150.0 // Points per second for world scroll
+    private let initialScrollSpeed: CGFloat = 150.0 // Renamed from scrollSpeed
+    private var currentGameSpeed: CGFloat = 0 // Initialized in didMove
+    private let maxScrollSpeed: CGFloat = 300.0 // Maximum speed cap
+    private let scrollSpeedAcceleration: CGFloat = 2.0 // Points per second increase, per second
     private var lastUpdateTime: TimeInterval = 0
     private let spawnInterval: TimeInterval = 1.5 // Time between spawning rows
     // Define lanes for spawning
@@ -106,6 +109,9 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // Setup UI elements
         setupUI()
+
+        // Initialize current game speed
+        currentGameSpeed = initialScrollSpeed
     }
 
     func calculateLanePositions() {
@@ -376,8 +382,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         lastUpdateTime = currentTime
         guard deltaTime > 0, let player = player else { return } // Ensure player exists
 
-        // Scroll the world node
-        let distanceToScroll = scrollSpeed * CGFloat(deltaTime)
+        // --- Update Game Speed ---
+        if currentGameSpeed < maxScrollSpeed {
+            currentGameSpeed += scrollSpeedAcceleration * CGFloat(deltaTime)
+            // Clamp to max speed in case of large deltaTime
+            currentGameSpeed = min(currentGameSpeed, maxScrollSpeed)
+        }
+        // ------------------------
+
+        // Scroll the world node using the current speed
+        let distanceToScroll = currentGameSpeed * CGFloat(deltaTime)
         worldNode.position.y -= distanceToScroll
         distanceTraveled += distanceToScroll // Accumulate distance
 
