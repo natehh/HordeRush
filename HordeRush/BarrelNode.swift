@@ -60,8 +60,8 @@ class BarrelNode: SKSpriteNode {
         case .hazard:
             valueLabel.text = "\(currentValue)"
         case .fireRateUp:
-            // For FireRateUp, show fixed text and maybe remaining hits?
-            valueLabel.text = "FR+" // Or maybe show currentValue like "FR+ (\(currentValue))"?
+            // Display remaining hits for FR+ barrels
+            valueLabel.text = "FR (\(currentValue))"
         }
         // Could add visual changes based on value here if needed
     }

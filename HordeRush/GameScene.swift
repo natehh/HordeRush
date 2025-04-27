@@ -37,8 +37,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private let projectileSize = CGSize(width: 5, height: 10)
     private let projectileColor = UIColor.yellow
     private let projectileSpeed: CGFloat = 600.0
-    private let fireRate: TimeInterval = 1
-    private var currentFireRate: TimeInterval = 1
+    private let fireRate: TimeInterval = 0.8
+    private var currentFireRate: TimeInterval = 0.8
     private let minFireRate: TimeInterval = 0.1 // Fastest possible fire rate
     private let fireRateIncreaseAmount: TimeInterval = 0.05 // How much faster each upgrade makes it
     // Need a reference to the shooting action sequence to modify its speed
@@ -334,30 +334,37 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let typeRoll = Double.random(in: 0...1)
 
         if typeRoll < 0.4 { // 40% chance Gate
-            // Scale gate values (more negative) with difficulty
-            let baseMinGate: CGFloat = -30.0
-            let baseMaxGate: CGFloat = -5.0
-            let minGate = Int(baseMinGate * difficultyFactor)
-            let maxGate = min(-1, max(minGate + 1, Int(baseMaxGate * difficultyFactor)))
+            // Scale gate values (more negative) with difficulty - SLOWER SCALING
+            let baseMinGate: CGFloat = -5.0 // Start less negative
+            let baseMaxGate: CGFloat = -2.0  // Start less negative
+            // Use sqrt for slower scaling. Ensure max is always <= -1 and >= min
+            let scaledMin = Int(baseMinGate * sqrt(difficultyFactor))
+            let scaledMax = min(-1, Int(baseMaxGate * sqrt(difficultyFactor)))
+            let minGate = scaledMin
+            let maxGate = max(minGate, scaledMax) // Ensure max >= min
+            
             let initialValue = Int.random(in: minGate ... maxGate)
             let node = GateNode(initialValue: initialValue)
             return node
         } else if typeRoll < 0.8 { // 40% chance Hazard Barrel (0.4 to 0.8)
-            // Scale hazard barrel values (more positive) with difficulty
+            // Scale hazard barrel values (more positive) with difficulty (Using sqrt for consistency)
             let baseMinBarrel: CGFloat = 5.0
-            let baseMaxBarrel: CGFloat = 25.0
-            let minBarrel = Int(baseMinBarrel * difficultyFactor)
-            let maxBarrel = max(minBarrel + 1, Int(baseMaxBarrel * difficultyFactor))
+            let baseMaxBarrel: CGFloat = 15.0 // Lowered base max slightly
+            let minBarrel = Int(baseMinBarrel * sqrt(difficultyFactor))
+            let maxBarrel = max(minBarrel + 1, Int(baseMaxBarrel * sqrt(difficultyFactor)))
             let initialValue = Int.random(in: minBarrel ... maxBarrel)
-            // Create Hazard Barrel
             let node = BarrelNode(type: .hazard, initialValue: initialValue)
             return node
         } else { // 20% chance Fire Rate Barrel (0.8 to 1.0)
-            // Fire rate barrels might just need 1 hit, or scale hits with difficulty?
-            // Let's start with a fixed low value, maybe increase slightly with difficulty
-            let baseHits: CGFloat = 1.0
-            let requiredHits = max(1, Int(round(baseHits * sqrt(difficultyFactor)))) // Slow scaling for required hits
-            // Create Fire Rate Up Barrel
+            // Randomize required hits within a range that scales slowly with difficulty
+            let baseMinHits: CGFloat = 2.0
+            let baseMaxHits: CGFloat = 5.0 // Base range for hits needed
+            
+            let minHits = max(1, Int(baseMinHits * sqrt(difficultyFactor)))
+            let maxHits = max(minHits + 1, Int(baseMaxHits * sqrt(difficultyFactor)))
+            
+            let requiredHits = Int.random(in: minHits...maxHits)
+            
             let node = BarrelNode(type: .fireRateUp, initialValue: requiredHits)
             return node
         }
