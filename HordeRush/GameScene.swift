@@ -37,7 +37,12 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private let projectileSize = CGSize(width: 5, height: 10)
     private let projectileColor = UIColor.yellow
     private let projectileSpeed: CGFloat = 600.0
-    private let fireRate: TimeInterval = 0.2
+    private let fireRate: TimeInterval = 1
+    private var currentFireRate: TimeInterval = 1
+    private let minFireRate: TimeInterval = 0.1 // Fastest possible fire rate
+    private let fireRateIncreaseAmount: TimeInterval = 0.05 // How much faster each upgrade makes it
+    // Need a reference to the shooting action sequence to modify its speed
+    private var shootingAction: SKAction?
 
     // Crowd Properties
     var crowdCount: Int = 1
@@ -66,6 +71,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var currentGameSpeed: CGFloat = 0 // Initialized in didMove
     private let maxScrollSpeed: CGFloat = 300.0 // Maximum speed cap
     private let scrollSpeedAcceleration: CGFloat = 2.0 // Points per second increase, per second
+    
+    // Difficulty Properties
+    private var difficultyFactor: CGFloat = 1.0 // Starts at 1.0, increases over time
+    private let maxDifficultyFactor: CGFloat = 3.0 // Max multiplier for values/counts
+    private let difficultyIncreaseRate: CGFloat = 0.01 // How much factor increases per second
+    // Removed timeSinceLastDifficultyIncrease and difficultyUpdateInterval, will update continuously
+    
     private var lastUpdateTime: TimeInterval = 0
     private let spawnInterval: TimeInterval = 1.5 // Time between spawning rows
     // Define lanes for spawning
@@ -167,17 +179,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     func setupShooting() {
         // Create the sequence: Wait, then Spawn
-        let waitAction = SKAction.wait(forDuration: fireRate)
-        let spawnAction = SKAction.run { [weak self] in // Use weak self to avoid retain cycles
+        let waitAction = SKAction.wait(forDuration: currentFireRate) // Use currentFireRate
+        let spawnAction = SKAction.run { [weak self] in
             self?.spawnProjectile()
         }
+        // Store the sequence itself
         let sequenceAction = SKAction.sequence([waitAction, spawnAction])
 
         // Repeat the sequence forever
-        let repeatAction = SKAction.repeatForever(sequenceAction)
+        shootingAction = SKAction.repeatForever(sequenceAction)
 
         // Run the repeating action on the scene
-        self.run(repeatAction, withKey: "shootingAction") // Add a key to potentially stop it later
+        if let action = shootingAction {
+            self.run(action, withKey: "shootingAction") 
+        }
     }
 
     func spawnProjectile() {
@@ -242,39 +257,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         let centerLaneX = lanePositions[1]
         let rightLaneX = lanePositions[2]
 
-        // --- Define Helper Functions for Creation & Adding ---
-        func createGateOrBarrel() -> SKNode {
-            let isGate = Bool.random() // 50/50 chance Gate vs Barrel
-            if isGate {
-                let initialValue = Int.random(in: -30 ... -5)
-                let node = GateNode(initialValue: initialValue)
-                // print("Creating Gate(value: \(initialValue))") // Keep print in addNodeToLayer
-                return node
-            } else {
-                let initialValue = Int.random(in: 5 ... 25)
-                let node = BarrelNode(initialValue: initialValue)
-                // print("Creating Barrel(value: \(initialValue))") // Keep print in addNodeToLayer
-                return node
-            }
-        }
-
-        func createZombie() -> SKNode {
-             // print("Creating Zombie") // Keep print in addNodeToLayer
-             return ZombieNode()
-        }
-
-        func addNodeToLayer(_ node: SKNode, position: CGPoint, description: String) {
-            node.position = position
-            if node is ZombieNode {
-                 node.zPosition = 6
-            } else {
-                 node.zPosition = 5
-            }
-            objectLayer.addChild(node)
-             print("Spawning \(description) at (\(position.x.rounded()), \(position.y.rounded()))")
-        }
-        // ----------------------------------------------------
-
         // --- Define and Choose Spawn Pattern --- 
         enum SpawnPattern: CaseIterable {
             case zombieCenter
@@ -292,45 +274,113 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // --- Spawn Objects Based on Pattern ---
         switch chosenPattern {
         case .zombieCenter:
-            let zombie = createZombie()
-            addNodeToLayer(zombie, position: CGPoint(x: centerLaneX, y: spawnY), description: "Zombie")
+            spawnZombies(count: calculateNumberOfZombies(), laneX: centerLaneX, startY: spawnY)
 
         case .gateOrBarrelLeft:
             let node = createGateOrBarrel()
-            let desc = node is GateNode ? "Gate" : "Barrel"
+            let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
             addNodeToLayer(node, position: CGPoint(x: leftLaneX, y: spawnY), description: desc)
 
         case .gateOrBarrelRight:
             let node = createGateOrBarrel()
-            let desc = node is GateNode ? "Gate" : "Barrel"
+            let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
             addNodeToLayer(node, position: CGPoint(x: rightLaneX, y: spawnY), description: desc)
 
         case .zombieCenterGateOrBarrelLeft:
-            let zombie = createZombie()
-            addNodeToLayer(zombie, position: CGPoint(x: centerLaneX, y: spawnY), description: "Zombie")
+            spawnZombies(count: calculateNumberOfZombies(), laneX: centerLaneX, startY: spawnY)
             let node = createGateOrBarrel()
-            let desc = node is GateNode ? "Gate" : "Barrel"
+            let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
             addNodeToLayer(node, position: CGPoint(x: leftLaneX, y: spawnY), description: desc)
 
         case .zombieCenterGateOrBarrelRight:
-            let zombie = createZombie()
-            addNodeToLayer(zombie, position: CGPoint(x: centerLaneX, y: spawnY), description: "Zombie")
+            spawnZombies(count: calculateNumberOfZombies(), laneX: centerLaneX, startY: spawnY)
             let node = createGateOrBarrel()
-            let desc = node is GateNode ? "Gate" : "Barrel"
+            let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
             addNodeToLayer(node, position: CGPoint(x: rightLaneX, y: spawnY), description: desc)
 
         case .gateOrBarrelLeftGateOrBarrelRight:
             let nodeLeft = createGateOrBarrel()
-            let descLeft = nodeLeft is GateNode ? "Gate" : "Barrel"
+            let descLeft = nodeLeft is GateNode ? "Gate(\((nodeLeft as! GateNode).currentValue))" : "Barrel(\((nodeLeft as! BarrelNode).currentValue))"
             addNodeToLayer(nodeLeft, position: CGPoint(x: leftLaneX, y: spawnY), description: descLeft)
             
             let nodeRight = createGateOrBarrel()
-            let descRight = nodeRight is GateNode ? "Gate" : "Barrel"
+            let descRight = nodeRight is GateNode ? "Gate(\((nodeRight as! GateNode).currentValue))" : "Barrel(\((nodeRight as! BarrelNode).currentValue))"
             addNodeToLayer(nodeRight, position: CGPoint(x: rightLaneX, y: spawnY), description: descRight)
         }
         // ---------------------------------------
     }
+
+    // --- Helper Methods for Spawning (Moved from inside spawnObjectRow) ---
+    private func calculateNumberOfZombies() -> Int {
+        // Increase number of zombies based on difficulty, minimum 1
+        return max(1, Int(round(difficultyFactor)))
+    }
+
+    private func spawnZombies(count: Int, laneX: CGFloat, startY: CGFloat) {
+        // Spawn multiple zombies with slight vertical offset
+        let zombieSpacing: CGFloat = 10.0 // Vertical space between zombies
+        let baseZombieNode = ZombieNode() // To get size reference if needed
+        let zombieHeight = baseZombieNode.size.height
+        
+        for i in 0..<count {
+            let zombie = ZombieNode() // Create a new instance each time
+            let yOffset = CGFloat(i) * (zombieHeight + zombieSpacing)
+            addNodeToLayer(zombie, position: CGPoint(x: laneX, y: startY + yOffset), description: "Zombie")
+        }
+    }
     
+    private func createGateOrBarrel() -> SKNode {
+        // Determine type: e.g., 40% Gate, 40% Hazard Barrel, 20% Fire Rate Barrel
+        let typeRoll = Double.random(in: 0...1)
+
+        if typeRoll < 0.4 { // 40% chance Gate
+            // Scale gate values (more negative) with difficulty
+            let baseMinGate: CGFloat = -30.0
+            let baseMaxGate: CGFloat = -5.0
+            let minGate = Int(baseMinGate * difficultyFactor)
+            let maxGate = min(-1, max(minGate + 1, Int(baseMaxGate * difficultyFactor)))
+            let initialValue = Int.random(in: minGate ... maxGate)
+            let node = GateNode(initialValue: initialValue)
+            return node
+        } else if typeRoll < 0.8 { // 40% chance Hazard Barrel (0.4 to 0.8)
+            // Scale hazard barrel values (more positive) with difficulty
+            let baseMinBarrel: CGFloat = 5.0
+            let baseMaxBarrel: CGFloat = 25.0
+            let minBarrel = Int(baseMinBarrel * difficultyFactor)
+            let maxBarrel = max(minBarrel + 1, Int(baseMaxBarrel * difficultyFactor))
+            let initialValue = Int.random(in: minBarrel ... maxBarrel)
+            // Create Hazard Barrel
+            let node = BarrelNode(type: .hazard, initialValue: initialValue)
+            return node
+        } else { // 20% chance Fire Rate Barrel (0.8 to 1.0)
+            // Fire rate barrels might just need 1 hit, or scale hits with difficulty?
+            // Let's start with a fixed low value, maybe increase slightly with difficulty
+            let baseHits: CGFloat = 1.0
+            let requiredHits = max(1, Int(round(baseHits * sqrt(difficultyFactor)))) // Slow scaling for required hits
+            // Create Fire Rate Up Barrel
+            let node = BarrelNode(type: .fireRateUp, initialValue: requiredHits)
+            return node
+        }
+    }
+
+    private func createZombie() -> SKNode {
+         // Basic zombie creation remains the same
+         return ZombieNode()
+         // Note: Could add difficulty scaling to zombie properties here later if needed (e.g., health)
+    }
+
+    private func addNodeToLayer(_ node: SKNode, position: CGPoint, description: String) {
+        node.position = position
+        if node is ZombieNode {
+             node.zPosition = 6
+        } else {
+             node.zPosition = 5
+        }
+        objectLayer.addChild(node)
+         print("Spawning \(description) at (\(position.x.rounded()), \(position.y.rounded()))")
+    }
+    // -------------------------------------------------------------------
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // Handle initial touch for dragging
         guard let touch = touches.first else { return }
@@ -390,6 +440,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         }
         // ------------------------
 
+        // --- Update Difficulty Factor ---
+        if difficultyFactor < maxDifficultyFactor {
+            difficultyFactor += difficultyIncreaseRate * CGFloat(deltaTime)
+            difficultyFactor = min(difficultyFactor, maxDifficultyFactor)
+            // Optional: print("Difficulty Factor: \(String(format: "%.2f", difficultyFactor))")
+        }
+        // -----------------------------
+
         // Scroll the world node using the current speed
         let distanceToScroll = currentGameSpeed * CGFloat(deltaTime)
         worldNode.position.y -= distanceToScroll
@@ -435,6 +493,18 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             member.position.y += deltaY * followSpeedFactor * CGFloat(deltaTime)
         }
         // ---------------------------------------------------
+    }
+
+    // MARK: - Gameplay Modifiers
+
+    func increaseFireRate() { 
+        // Decrease the delay, but not below the minimum
+        currentFireRate = max(minFireRate, currentFireRate - fireRateIncreaseAmount)
+        print("Fire Rate Increased! New Delay: \(String(format: "%.2f", currentFireRate))")
+
+        // Update the existing shooting action timer
+        self.removeAction(forKey: "shootingAction") // Stop the old timer
+        setupShooting() // Restart with the new currentFireRate
     }
 
     // MARK: - SKPhysicsContactDelegate Methods
@@ -512,10 +582,22 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         projectile.removeFromParent() // Remove projectile
     }
 
-    func projectileDidCollideWithBarrel(projectile: SKNode, barrel: BarrelNode) { // Note: BarrelNode type
-        print("Handling Projectile-Barrel collision")
-        barrel.hitByProjectile() // Call the barrel's method
+    func projectileDidCollideWithBarrel(projectile: SKNode, barrel: BarrelNode) { 
+        print("Handling Projectile-Barrel collision (Type: \(barrel.type))")
+        
+        let wasDepletedBeforeHit = barrel.isDepleted
+        barrel.hitByProjectile() // Handle hit logic (decrements value, checks depletion)
+        let isDepletedAfterHit = barrel.isDepleted // Check status *after* hit
+
         projectile.removeFromParent() // Remove projectile
+
+        // Check if the barrel was *just* depleted by this hit
+        if !wasDepletedBeforeHit && isDepletedAfterHit {
+            if barrel.type == .fireRateUp {
+                increaseFireRate() // Apply fire rate bonus
+            }
+            // Note: Barrel removes itself in its depleteBarrel method
+        }
     }
 
     func projectileDidCollideWithZombie(projectile: SKNode, zombie: ZombieNode) { // Note: ZombieNode type
