@@ -79,7 +79,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // Removed timeSinceLastDifficultyIncrease and difficultyUpdateInterval, will update continuously
     
     private var lastUpdateTime: TimeInterval = 0
-    private let spawnInterval: TimeInterval = 1.5 // Time between spawning rows
+    private let spawnInterval: TimeInterval = 1.5 // Time between spawning GATE/BARREL rows
+    
+    // Zombie Spawn Properties (New)
+    private let zombieSpawnTickInterval: TimeInterval = 0.2 // How often we *try* to spawn
+    private let zombieSpawnBaseProbability: Double = 0.10 // Initial chance per tick
+    private let zombieSpawnMaxProbability: Double = 0.60 // Max chance per tick at max difficulty
+    
     // Define lanes for spawning
     private var lanePositions: [CGFloat] = []
 
@@ -116,8 +122,11 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // Start the shooting timer
         setupShooting()
 
-        // Start the object spawner
+        // Start the object spawner (Gates/Barrels)
         setupObjectSpawner()
+
+        // Start the zombie spawner (New)
+        setupZombieSpawner()
 
         // Setup UI elements
         setupUI()
@@ -254,46 +263,44 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             return
         }
         let leftLaneX = lanePositions[0]
-        let centerLaneX = lanePositions[1]
         let rightLaneX = lanePositions[2]
 
-        // --- Define and Choose Spawn Pattern --- 
+        // --- Define and Choose Spawn Pattern (Gates/Barrels Only) ---
         enum SpawnPattern: CaseIterable {
-            case zombieCenter
             case gateOrBarrelLeft
             case gateOrBarrelRight
-            case zombieCenterGateOrBarrelLeft
-            case zombieCenterGateOrBarrelRight
             case gateOrBarrelLeftGateOrBarrelRight
-            // Could add weights here later if needed
+            case empty // Add chance for no gate/barrel to spawn
         }
 
-        let chosenPattern = SpawnPattern.allCases.randomElement()!
-        // ---------------------------------------
+        // Adjust weights if desired (e.g., higher chance of empty)
+        let patternWeights: [SpawnPattern: Double] = [
+            .gateOrBarrelLeft: 1.0,
+            .gateOrBarrelRight: 1.0,
+            .gateOrBarrelLeftGateOrBarrelRight: 0.5, // Less likely to get two
+            .empty: 1.5 // More likely to get empty row
+        ]
+        let totalWeight = patternWeights.values.reduce(0, +)
+        var randomValue = Double.random(in: 0...totalWeight)
+        var chosenPattern: SpawnPattern = .empty // Default
+
+        for (pattern, weight) in patternWeights {
+            if randomValue < weight {
+                chosenPattern = pattern
+                break
+            }
+            randomValue -= weight
+        }
+        // --------------------------------------------------------
 
         // --- Spawn Objects Based on Pattern ---
         switch chosenPattern {
-        case .zombieCenter:
-            spawnZombies(count: calculateNumberOfZombies(), laneX: centerLaneX, startY: spawnY)
-
         case .gateOrBarrelLeft:
             let node = createGateOrBarrel()
             let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
             addNodeToLayer(node, position: CGPoint(x: leftLaneX, y: spawnY), description: desc)
 
         case .gateOrBarrelRight:
-            let node = createGateOrBarrel()
-            let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
-            addNodeToLayer(node, position: CGPoint(x: rightLaneX, y: spawnY), description: desc)
-
-        case .zombieCenterGateOrBarrelLeft:
-            spawnZombies(count: calculateNumberOfZombies(), laneX: centerLaneX, startY: spawnY)
-            let node = createGateOrBarrel()
-            let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
-            addNodeToLayer(node, position: CGPoint(x: leftLaneX, y: spawnY), description: desc)
-
-        case .zombieCenterGateOrBarrelRight:
-            spawnZombies(count: calculateNumberOfZombies(), laneX: centerLaneX, startY: spawnY)
             let node = createGateOrBarrel()
             let desc = node is GateNode ? "Gate(\((node as! GateNode).currentValue))" : "Barrel(\((node as! BarrelNode).currentValue))"
             addNodeToLayer(node, position: CGPoint(x: rightLaneX, y: spawnY), description: desc)
@@ -306,29 +313,15 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             let nodeRight = createGateOrBarrel()
             let descRight = nodeRight is GateNode ? "Gate(\((nodeRight as! GateNode).currentValue))" : "Barrel(\((nodeRight as! BarrelNode).currentValue))"
             addNodeToLayer(nodeRight, position: CGPoint(x: rightLaneX, y: spawnY), description: descRight)
+        
+        case .empty:
+            // Do nothing, spawn no gates/barrels this interval
+            break
         }
         // ---------------------------------------
     }
 
-    // --- Helper Methods for Spawning (Moved from inside spawnObjectRow) ---
-    private func calculateNumberOfZombies() -> Int {
-        // Increase number of zombies based on difficulty, minimum 1
-        return max(1, Int(round(difficultyFactor)))
-    }
-
-    private func spawnZombies(count: Int, laneX: CGFloat, startY: CGFloat) {
-        // Spawn multiple zombies with slight vertical offset
-        let zombieSpacing: CGFloat = 10.0 // Vertical space between zombies
-        let baseZombieNode = ZombieNode() // To get size reference if needed
-        let zombieHeight = baseZombieNode.size.height
-        
-        for i in 0..<count {
-            let zombie = ZombieNode() // Create a new instance each time
-            let yOffset = CGFloat(i) * (zombieHeight + zombieSpacing)
-            addNodeToLayer(zombie, position: CGPoint(x: laneX, y: startY + yOffset), description: "Zombie")
-        }
-    }
-    
+    // --- Helper Methods for Spawning ---
     private func createGateOrBarrel() -> SKNode {
         // Determine type: e.g., 40% Gate, 40% Hazard Barrel, 20% Fire Rate Barrel
         let typeRoll = Double.random(in: 0...1)
@@ -368,12 +361,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             let node = BarrelNode(type: .fireRateUp, initialValue: requiredHits)
             return node
         }
-    }
-
-    private func createZombie() -> SKNode {
-         // Basic zombie creation remains the same
-         return ZombieNode()
-         // Note: Could add difficulty scaling to zombie properties here later if needed (e.g., health)
     }
 
     private func addNodeToLayer(_ node: SKNode, position: CGPoint, description: String) {
@@ -845,6 +832,48 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             // Might as well remove the depleted barrel if somehow still here
             barrel.removeFromParent()
         }
+    }
+
+    // New Zombie Spawner Setup
+    func setupZombieSpawner() {
+        let waitAction = SKAction.wait(forDuration: zombieSpawnTickInterval)
+        let spawnAttemptAction = SKAction.run { [weak self] in
+            self?.attemptToSpawnZombie()
+        }
+        let sequenceAction = SKAction.sequence([waitAction, spawnAttemptAction])
+        let repeatAction = SKAction.repeatForever(sequenceAction)
+        self.run(repeatAction, withKey: "zombieSpawnerAction")
+    }
+
+    // New Zombie Spawn Attempt Logic
+    func attemptToSpawnZombie() {
+        // Calculate current probability based on difficulty (linear interpolation)
+        let difficultyProgress = (difficultyFactor - 1.0) / (maxDifficultyFactor - 1.0) // 0.0 to 1.0
+        let currentProbability = zombieSpawnBaseProbability + (zombieSpawnMaxProbability - zombieSpawnBaseProbability) * difficultyProgress
+        
+        if Double.random(in: 0...1) < currentProbability {
+            // Spawn a zombie!
+            guard lanePositions.count == 3 else { return } 
+            let centerLaneX = lanePositions[1]
+            let laneWidth = abs(lanePositions[0] - lanePositions[1]) // Assuming equal lanes
+            let halfLaneWidth = laneWidth / 2
+            // Add padding so zombies don't spawn exactly on the lane edge
+            let padding: CGFloat = 20.0 
+            let randomOffsetX = CGFloat.random(in: -(halfLaneWidth - padding)...(halfLaneWidth - padding))
+            
+            let spawnX = centerLaneX + randomOffsetX
+            let spawnY = (size.height / 2) - worldNode.position.y + 100 // Above screen top
+            
+            let zombie = createZombie() // Use existing helper
+            addNodeToLayer(zombie, position: CGPoint(x: spawnX, y: spawnY), description: "Zombie")
+        }
+    }
+
+    // Re-add createZombie helper needed by attemptToSpawnZombie
+    private func createZombie() -> SKNode {
+         // Basic zombie creation remains the same
+         return ZombieNode()
+         // Note: Could add difficulty scaling to zombie properties here later if needed (e.g., health)
     }
 }
 
