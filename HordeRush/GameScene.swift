@@ -95,10 +95,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var score: Int = 0
     private var distanceTraveled: CGFloat = 0 // Track distance for scoring
     
+    // Zombie Animation Assets
+    private var zombieAtlas: SKTextureAtlas?
+    private var zombieWalkTextures: [SKTexture] = []
+    private var zombieDieTextures: [SKTexture] = []
+    private var zombieWalkAction: SKAction?
+    private var zombieDieAction: SKAction?
+
     override func didMove(to view: SKView) {
         // Setup scene
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         backgroundColor = .darkGray // Will be covered by background tiles
+
+        // Preload Assets (including new zombie assets)
+        preloadZombieAssets() // Call this early
 
         // Add World Node (parent for scrolling elements)
         addChild(worldNode)
@@ -504,213 +514,263 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - SKPhysicsContactDelegate Methods
 
     func didBegin(_ contact: SKPhysicsContact) {
-        // This method is called when two physics bodies make contact.
+        var firstBody: SKPhysicsBody
+        var secondBody: SKPhysicsBody
 
-        // Identify the two bodies involved in the contact
-        let bodyA = contact.bodyA
-        let bodyB = contact.bodyB
-
-        // Sort bodies by category to simplify checks (optional but helpful)
-        let firstBody: SKPhysicsBody
-        let secondBody: SKPhysicsBody
-
-        // Ensure firstBody always has the lower category bitmask
-        if bodyA.categoryBitMask < bodyB.categoryBitMask {
-            firstBody = bodyA
-            secondBody = bodyB
+        // Ensure bodies are ordered by category bitmask
+        if contact.bodyA.categoryBitMask < contact.bodyB.categoryBitMask {
+            firstBody = contact.bodyA
+            secondBody = contact.bodyB
         } else {
-            firstBody = bodyB
-            secondBody = bodyA
+            firstBody = contact.bodyB
+            secondBody = contact.bodyA
         }
 
-        // --- Projectile Collisions ---
-        if firstBody.categoryBitMask == PhysicsCategory.projectile {
-            if secondBody.categoryBitMask == PhysicsCategory.gate {
-                if let projectileNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
-                    projectileDidCollideWithGate(projectile: projectileNode, gate: gateNode)
-                }
-            } else if secondBody.categoryBitMask == PhysicsCategory.barrel {
-                if let projectileNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
-                     projectileDidCollideWithBarrel(projectile: projectileNode, barrel: barrelNode)
-                }
-            } else if secondBody.categoryBitMask == PhysicsCategory.zombie {
-                if let projectileNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
-                     projectileDidCollideWithZombie(projectile: projectileNode, zombie: zombieNode)
-                }
+        // Projectile vs Gate
+        if firstBody.categoryBitMask == PhysicsCategory.projectile && secondBody.categoryBitMask == PhysicsCategory.gate {
+            if let projectile = firstBody.node as? SKSpriteNode, let gate = secondBody.node as? GateNode {
+                projectileDidCollideWithGate(projectile: projectile, gate: gate)
             }
-        // --- Player Collisions ---
-        } else if firstBody.categoryBitMask == PhysicsCategory.player {
-            if secondBody.categoryBitMask == PhysicsCategory.gate {
-                if let playerNode = firstBody.node, let gateNode = secondBody.node as? GateNode {
-                    playerDidCollideWithGate(player: playerNode, gate: gateNode)
-                }
-            } else if secondBody.categoryBitMask == PhysicsCategory.barrel {
-                 if let playerNode = firstBody.node, let barrelNode = secondBody.node as? BarrelNode {
-                    playerDidCollideWithBarrel(player: playerNode, barrel: barrelNode)
-                 }
-            } else if secondBody.categoryBitMask == PhysicsCategory.zombie {
-                 if let playerNode = firstBody.node, let zombieNode = secondBody.node as? ZombieNode {
-                    playerDidCollideWithZombie(player: playerNode, zombie: zombieNode)
-                 }
+        }
+        // Projectile vs Barrel
+        else if firstBody.categoryBitMask == PhysicsCategory.projectile && secondBody.categoryBitMask == PhysicsCategory.barrel {
+            if let projectile = firstBody.node as? SKSpriteNode, let barrel = secondBody.node as? BarrelNode {
+                projectileDidCollideWithBarrel(projectile: projectile, barrel: barrel)
             }
-        // --- Barrel Collisions (specifically with CrowdMember) ---
-        // Barrel (8) vs CrowdMember (32) -> Barrel is firstBody
-        } else if firstBody.categoryBitMask == PhysicsCategory.barrel && secondBody.categoryBitMask == PhysicsCategory.crowdMember {
-            print("DEBUG: Entered Barrel vs CrowdMember collision branch") // Add logging
-            if let barrelNode = firstBody.node as? BarrelNode, let memberNode = secondBody.node as? SKSpriteNode {
-                 crowdMemberDidCollideWithBarrel(member: memberNode, barrel: barrelNode)
+        }
+        // Projectile vs Zombie
+        else if firstBody.categoryBitMask == PhysicsCategory.projectile && secondBody.categoryBitMask == PhysicsCategory.zombie {
+            if let projectile = firstBody.node as? SKSpriteNode, let zombie = secondBody.node as? ZombieNode {
+                projectileDidCollideWithZombie(projectile: projectile, zombie: zombie)
             }
-        // --- Zombie Collisions (specifically with CrowdMember) ---
-        // Zombie (16) vs CrowdMember (32) -> Zombie is firstBody
-        } else if firstBody.categoryBitMask == PhysicsCategory.zombie && secondBody.categoryBitMask == PhysicsCategory.crowdMember {
-             if let zombieNode = firstBody.node as? ZombieNode, let memberNode = secondBody.node as? SKSpriteNode {
-                 crowdMemberDidCollideWithZombie(member: memberNode, zombie: zombieNode)
-             }
+        }
+        // Player vs Gate
+        else if firstBody.categoryBitMask == PhysicsCategory.player && secondBody.categoryBitMask == PhysicsCategory.gate {
+            if let player = firstBody.node as? SKSpriteNode, let gate = secondBody.node as? GateNode {
+                playerDidCollideWithGate(player: player, gate: gate)
+            }
+        }
+        // Player vs Barrel
+        else if firstBody.categoryBitMask == PhysicsCategory.player && secondBody.categoryBitMask == PhysicsCategory.barrel {
+            if let player = firstBody.node as? SKSpriteNode, let barrel = secondBody.node as? BarrelNode {
+                playerDidCollideWithBarrel(player: player, barrel: barrel)
+            }
+        }
+        // Player vs Zombie
+        else if firstBody.categoryBitMask == PhysicsCategory.player && secondBody.categoryBitMask == PhysicsCategory.zombie {
+            if let player = firstBody.node as? SKSpriteNode, let zombie = secondBody.node as? ZombieNode {
+                playerDidCollideWithZombie(player: player, zombie: zombie)
+            }
+        }
+         // Crowd Member vs Barrel (Handle per-member hit)
+        else if firstBody.categoryBitMask == PhysicsCategory.barrel && secondBody.categoryBitMask == PhysicsCategory.crowdMember {
+            if let barrel = firstBody.node as? BarrelNode, let member = secondBody.node as? SKSpriteNode {
+                crowdMemberDidCollideWithBarrel(member: member, barrel: barrel)
+            }
+        } 
+        // Crowd Member vs Zombie (Sacrifice)
+        else if firstBody.categoryBitMask == PhysicsCategory.zombie && secondBody.categoryBitMask == PhysicsCategory.crowdMember {
+            if let zombie = firstBody.node as? ZombieNode, let member = secondBody.node as? SKSpriteNode {
+                 crowdMemberDidCollideWithZombie(member: member, zombie: zombie)
+            }
         }
     }
 
-    // Updated Collision Handling Functions
-    func projectileDidCollideWithGate(projectile: SKNode, gate: GateNode) { // Note: GateNode type
-        print("Handling Projectile-Gate collision")
-        gate.hitByProjectile()       // Call the gate's method
+    // MARK: - Collision Handling Functions
+
+    func projectileDidCollideWithGate(projectile: SKSpriteNode, gate: GateNode) {
+        print("Projectile hit Gate")
         projectile.removeFromParent() // Remove projectile
+        gate.hitByProjectile()
     }
 
-    func projectileDidCollideWithBarrel(projectile: SKNode, barrel: BarrelNode) { 
-        print("Handling Projectile-Barrel collision (Type: \(barrel.type))")
+    func projectileDidCollideWithBarrel(projectile: SKSpriteNode, barrel: BarrelNode) {
+        print("Projectile hit Barrel (Type: \(barrel.type), Before Hit Value: \(barrel.currentValue))")
+        projectile.removeFromParent() // Remove projectile
         
         let wasDepletedBeforeHit = barrel.isDepleted
-        barrel.hitByProjectile() // Handle hit logic (decrements value, checks depletion)
+        barrel.hitByProjectile() // Barrel handles its own value/depletion
         let isDepletedAfterHit = barrel.isDepleted // Check status *after* hit
 
-        projectile.removeFromParent() // Remove projectile
-
-        // Check if the barrel was *just* depleted by this hit
-        if !wasDepletedBeforeHit && isDepletedAfterHit {
-            if barrel.type == .fireRateUp {
-                increaseFireRate() // Apply fire rate bonus
-            }
-            // Note: Barrel removes itself in its depleteBarrel method
+        // Check if the barrel was *just* depleted by this hit AND is a fire rate barrel
+        if !wasDepletedBeforeHit && isDepletedAfterHit && barrel.type == .fireRateUp {
+            print("Fire Rate Barrel Depleted by Projectile - Increasing Fire Rate!")
+            self.increaseFireRate() // Call the fire rate increase function
         }
+        // Note: The barrel removes itself in its depleteBarrel method if currentValue <= 0
     }
 
-    func projectileDidCollideWithZombie(projectile: SKNode, zombie: ZombieNode) { // Note: ZombieNode type
-        print("Handling Projectile-Zombie collision")
+    func projectileDidCollideWithZombie(projectile: SKSpriteNode, zombie: ZombieNode) {
+        print("Projectile hit Zombie")
         projectile.removeFromParent() // Remove projectile
-        zombie.hitByProjectile()       // Call zombie's method (which removes it)
+        // zombie.removeFromParent() // Remove zombie
+        zombie.die() // Trigger death animation sequence
     }
 
-    func playerDidCollideWithGate(player: SKNode, gate: GateNode) {
-        print("Handling Player-Gate collision")
-        let value = gate.playerContact()
-
-        if value >= 0 {
-            // Add members if value is 0 or positive
-             if value > 0 { addCrowdMembers(count: value) }
-        } else { // Value is negative
-            let membersToRemove = abs(value)
-            if membersToRemove >= crowdCount { // Removing more members than exist (including leader)
-                print("Negative gate value \(value) exceeds crowd size \(crowdCount). GAME OVER.")
-                // Game Over
-                 gate.removeFromParent()
-                 triggerGameOver()
-            } else {
-                // Remove members, leader survives
-                removeCrowdMembers(count: membersToRemove)
-                 gate.removeFromParent()
-            }
+    func playerDidCollideWithGate(player: SKSpriteNode, gate: GateNode) {
+        print("Player hit Gate")
+        let valueChange = gate.playerContact() // Get value directly
+        
+        if valueChange > 0 {
+            addCrowdMembers(count: valueChange)
+        } else if valueChange < 0 {
+            removeCrowdMembers(count: abs(valueChange))
         }
+        
+        // Gate should be removed immediately after player contact regardless of value
+        // It might manage its own removal in some cases, but let's ensure it here.
+        gate.removeFromParent() 
     }
 
-    func playerDidCollideWithBarrel(player: SKNode, barrel: BarrelNode) {
-        print("Handling Player-Barrel collision (Player Leader)")
+    func playerDidCollideWithBarrel(player: SKSpriteNode, barrel: BarrelNode) {
+        print("Player hit Barrel")
+        // Check if contact is hazardous (returns true if active hazard barrel)
         let isHazard = barrel.playerContact()
         
         if isHazard {
-            print("Player leader hit active barrel!")
-            if crowdMembers.isEmpty {
-                print("Player leader hit barrel with no crowd left - GAME OVER")
-                triggerGameOver()
-                // Optionally remove barrel here too, though game over stops updates
-                // barrel.removeFromParent()
-            } else {
-                print("Player leader hit barrel! Sacrificing one crowd member.")
-                removeCrowdMembers(count: 1)
-                // Do NOT remove the barrel here - let it potentially hit a member
+            print("Player hit ACTIVE Hazard Barrel - GAME OVER!")
+            gameOver()
+        } else {
+            // Player contacted a non-hazard barrel (FR+) or a depleted one.
+            // Do nothing specific here, barrel removal is handled by depletion logic.
+            print("Player contacted non-hazard or depleted barrel.")
+            // Check if it was depleted just now (though player contact doesn't deplete FR+ barrels)
+            if barrel.isDepleted {
+                 // Already handled by depleteBarrel
             }
+        }
+    }
+
+    func playerDidCollideWithZombie(player: SKSpriteNode, zombie: ZombieNode) {
+        print("Player hit Zombie")
+        // zombie.removeFromParent() // Remove zombie
+        zombie.die() // Trigger death animation
+        gameOver() // Player hitting zombie is game over
+    }
+    
+    func crowdMemberDidCollideWithBarrel(member: SKSpriteNode, barrel: BarrelNode) {
+        print("Crowd member hit Barrel")
+        // Check if contact is hazardous
+        let isHazard = barrel.playerContact()
+
+        if isHazard {
+            print("Crowd member hit ACTIVE Hazard Barrel - removing member.")
+            removeSpecificCrowdMember(member: member) // Remove the specific member
+            // Barrel persists if it's a hazard, to hit more members potentially
         } else {
-             print("Player passed depleted barrel location.")
-             // Depleted barrels are harmless and should already be gone or will be cleaned up
+             // Crowd member contacted a non-hazard barrel (FR+) or a depleted one.
+             // Do nothing specific, barrel removal handled by depletion.
+             print("Crowd member contacted non-hazard or depleted barrel.")
         }
     }
 
-    func playerDidCollideWithZombie(player: SKNode, zombie: ZombieNode) {
-        print("Handling Player-Zombie collision")
-        zombie.playerContact() // Remove zombie
+    func crowdMemberDidCollideWithZombie(member: SKSpriteNode, zombie: ZombieNode) {
+        print("Crowd member sacrificed for Zombie")
+        removeSpecificCrowdMember(member: member) // Remove the crowd member
+        // zombie.removeFromParent() // Remove the zombie
+        zombie.die() // Zombie dies when it takes out a crowd member
+    }
 
-        if crowdMembers.isEmpty {
-            print("Player hit zombie with no crowd left - GAME OVER")
-            triggerGameOver()
-        } else {
-            print("Player hit zombie! Sacrificing one crowd member.")
-            removeCrowdMembers(count: 1)
+    // ... other functions (addCrowdMembers, removeCrowdMembers, gameOver etc.) ...
+    
+    // MARK: - Object Creation Helpers
+
+    // ... createGate, createBarrel ...
+
+    func createZombie() -> ZombieNode {
+        // Ensure the animation assets have been loaded
+        guard !zombieWalkTextures.isEmpty, let dieAction = zombieDieAction else {
+            // Fallback: Create a basic node if animations failed to load
+            print("CRITICAL ERROR: Zombie animation assets not ready! Returning basic node.")
+            // Correct SKTexture initializer and UIColor reference
+            let fallbackPixelData = Data([0xFF, 0x00, 0x00, 0xFF]) // Red pixel RGBA
+            let fallbackSize = CGSize(width: 1, height: 1)
+            let placeholderTexture = SKTexture(data: fallbackPixelData, size: fallbackSize)
+            let basicZombie = ZombieNode(walkTextures: [placeholderTexture], dieAction: SKAction()) // Pass dummy assets
+            basicZombie.colorBlendFactor = 1.0 // Ensure color is visible
+            basicZombie.color = UIColor.red // Correct UIColor reference
+            basicZombie.size = CGSize(width: 10, height: 10)
+            return basicZombie
+        }
+        // Use the initializer that takes the preloaded walk textures and die action
+        return ZombieNode(walkTextures: zombieWalkTextures, dieAction: dieAction)
+    }
+
+    // ... spawnObjectRow ...
+
+    func preloadZombieAssets() {
+        zombieAtlas = SKTextureAtlas(named: "Zombie") // Ensure 'Zombie.atlas' exists in Assets.xcassets
+
+        guard let atlas = zombieAtlas else {
+            print("Error: Could not load Zombie texture atlas")
+            return
+        }
+
+        // Load walking textures (tile130.png to tile138.png)
+        for i in 130...138 {
+            let textureName = "tile\(i).png"
+            zombieWalkTextures.append(atlas.textureNamed(textureName))
+        }
+
+        // Load dying textures (tile260.png to tile265.png)
+        for i in 260...265 {
+            let textureName = "tile\(i).png"
+            zombieDieTextures.append(atlas.textureNamed(textureName))
+        }
+
+        // Create animation actions
+        if !zombieWalkTextures.isEmpty {
+            let walkAnimation = SKAction.animate(with: zombieWalkTextures, timePerFrame: 0.1) // Adjust timePerFrame as needed
+            zombieWalkAction = SKAction.repeatForever(walkAnimation)
+        }
+
+        if !zombieDieTextures.isEmpty {
+            // Create the die animation *without* repeating
+            zombieDieAction = SKAction.animate(with: zombieDieTextures, timePerFrame: 0.1) // Adjust timePerFrame as needed
+        }
+        
+        print("Zombie assets loaded: Walk frames: \(zombieWalkTextures.count), Die frames: \(zombieDieTextures.count)")
+        if zombieWalkAction == nil { print("Warning: Zombie walk action not created.") }
+        if zombieDieAction == nil { print("Warning: Zombie die action not created.") }
+    }
+
+    // ... other functions (addCrowdMembers, removeCrowdMembers, gameOver etc.) ...
+
+    // MARK: - UI Setup & Updates (Re-added)
+    func setupUI() {
+        let horizontalPadding: CGFloat = 30
+        let verticalPadding: CGFloat = 30 // Distance from top edge
+
+        // Score Label (Top Left)
+        scoreLabel = SKLabelNode(fontNamed: "Arial-BoldMT")
+        scoreLabel?.fontSize = 24
+        scoreLabel?.fontColor = .white
+        scoreLabel?.horizontalAlignmentMode = .left
+        scoreLabel?.position = CGPoint(x: -size.width/2 + horizontalPadding, y: size.height/2 - verticalPadding)
+        scoreLabel?.zPosition = 100 // Ensure UI is above everything
+        scoreLabel?.text = "Score: 0"
+        if let scoreLabel = scoreLabel {
+            addChild(scoreLabel) // Add directly to scene
+        }
+
+        // Crowd Label (Top Right)
+        crowdLabel = SKLabelNode(fontNamed: "Arial-BoldMT")
+        crowdLabel?.fontSize = 24
+        crowdLabel?.fontColor = .white
+        crowdLabel?.horizontalAlignmentMode = .right
+        crowdLabel?.position = CGPoint(x: size.width/2 - horizontalPadding, y: size.height/2 - verticalPadding)
+        crowdLabel?.zPosition = 100
+        updateCrowdLabel() // Set initial text
+        if let crowdLabel = crowdLabel {
+             addChild(crowdLabel) // Add directly to scene
         }
     }
 
-    func triggerGameOver() {
-        guard let player = player else { return } // Don't trigger if already game over
-        print("--- GAME OVER --- Triggered")
-        player.removeFromParent() // Remove player node visually
-        self.player = nil // Nil out player reference
-
-        // Stop game actions immediately
-        self.removeAllActions() // Stop shooting, spawning etc.
-        projectileLayer.removeAllChildren() // Clear remaining projectiles
-        objectLayer.isPaused = true // Stop objects scrolling further (optional, visual)
-        
-        // Transition after a short delay to see the destruction
-        let wait = SKAction.wait(forDuration: 0.5)
-        let transitionAction = SKAction.run { [weak self] in
-            self?.transitionToGameOverScene()
-        }
-        self.run(SKAction.sequence([wait, transitionAction]))
+    func updateCrowdLabel() {
+        crowdLabel?.text = "Crowd: \(crowdCount)"
     }
 
-    func transitionToGameOverScene() {
-        // Ensure view exists
-        guard let view = self.view else { return }
-        
-        // --- High Score Logic ---
-        let defaults = UserDefaults.standard
-        let highScoreKey = "highScore" // Key for UserDefaults
-        let currentHighScore = defaults.integer(forKey: highScoreKey) // Get current high score (defaults to 0)
-
-        if score > currentHighScore {
-            defaults.set(score, forKey: highScoreKey) // Save new high score
-            print("New High Score! \(score) saved.")
-            // defaults.synchronize() // Not strictly needed in modern iOS, but sometimes used
-        } else {
-            print("Score \(score) did not beat high score \(currentHighScore).")
-        }
-        // ------------------------
-
-        // Create the Game Over Scene, passing the final score
-        let gameOverScene = GameOverScene(size: view.bounds.size, score: self.score)
-        gameOverScene.scaleMode = self.scaleMode // Match scale mode
-        
-        // Create a transition
-        let transition = SKTransition.fade(withDuration: 1.0)
-        
-        // Present the scene
-        view.presentScene(gameOverScene, transition: transition)
-    }
-
-    // Add custom methods for player setup, UI setup, spawning, etc. later
-    // func setupPlayer() { ... }
-    // func setupUI() { ... }
-    // func spawnObjects() { ... }
-
-    // --- Crowd Management --- 
+    // MARK: - Crowd Management (Re-added)
     func addCrowdMembers(count: Int) {
         guard let player = player else { return }
         print("Adding \(count) members to crowd.")
@@ -747,10 +807,18 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
     func removeCrowdMembers(count: Int) {
         print("Removing up to \(count) members from crowd.")
-        let removalCount = min(count, crowdMembers.count)
-        guard removalCount > 0 else { return }
+        let actualRemovalCount = min(count, crowdMembers.count) // Don't remove more than exist
         
-        for _ in 0..<removalCount {
+        guard actualRemovalCount > 0 else {
+             if count > 0 && crowdMembers.isEmpty {
+                 // Tried to remove members, but only player leader remains - GAME OVER
+                 print("Removal request exceeds crowd size (only player leader left). Game Over.")
+                 gameOver()
+             }
+             return
+        }
+        
+        for _ in 0..<actualRemovalCount {
             if let memberToRemove = crowdMembers.popLast() {
                 memberToRemove.removeFromParent()
             }
@@ -759,82 +827,23 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
          print("Crowd count now: \(crowdCount)")
         updateCrowdLabel() // Update UI
     }
-    // -----------------------
-
-    func setupUI() {
-        let horizontalPadding: CGFloat = 30
-        let verticalPadding: CGFloat = 30 // Distance from top edge
-
-        // Score Label (Top Left)
-        scoreLabel = SKLabelNode(fontNamed: "Arial-BoldMT")
-        scoreLabel?.fontSize = 24
-        scoreLabel?.fontColor = .white
-        scoreLabel?.horizontalAlignmentMode = .left
-        scoreLabel?.position = CGPoint(x: -size.width/2 + horizontalPadding, y: size.height/2 - verticalPadding)
-        scoreLabel?.zPosition = 100 // Ensure UI is above everything
-        scoreLabel?.text = "Score: 0"
-        if let scoreLabel = scoreLabel {
-            addChild(scoreLabel) // Add directly to scene
+    
+    // Remove a specific member (used in collisions)
+    func removeSpecificCrowdMember(member: SKSpriteNode) {
+        guard let index = crowdMembers.firstIndex(of: member) else {
+            print("Warning: Tried to remove a specific crowd member not found in array.")
+            member.removeFromParent() // Still try to remove it from scene just in case
+            return
         }
-
-        // Crowd Label (Top Right)
-        crowdLabel = SKLabelNode(fontNamed: "Arial-BoldMT")
-        crowdLabel?.fontSize = 24
-        crowdLabel?.fontColor = .white
-        crowdLabel?.horizontalAlignmentMode = .right
-        crowdLabel?.position = CGPoint(x: size.width/2 - horizontalPadding, y: size.height/2 - verticalPadding)
-        crowdLabel?.zPosition = 100
-        updateCrowdLabel() // Set initial text
-        if let crowdLabel = crowdLabel {
-             addChild(crowdLabel) // Add directly to scene
-        }
+        
+        crowdMembers.remove(at: index)
+        member.removeFromParent()
+        crowdCount = 1 + crowdMembers.count
+        print("Removed specific member. Crowd count now: \(crowdCount)")
+        updateCrowdLabel()
     }
     
-    func updateCrowdLabel() {
-        crowdLabel?.text = "Crowd: \(crowdCount)"
-    }
-
-    // New handler for crowd member vs zombie
-    func crowdMemberDidCollideWithZombie(member: SKSpriteNode, zombie: ZombieNode) {
-        print("Handling CrowdMember-Zombie collision")
-        zombie.playerContact() // Remove zombie
-        
-        // Remove the specific crowd member
-        if let index = crowdMembers.firstIndex(of: member) {
-            crowdMembers.remove(at: index)
-            crowdCount = 1 + crowdMembers.count
-            updateCrowdLabel()
-        }
-        member.removeFromParent() 
-        print("Crowd count now: \(crowdCount)")
-    }
-
-    // Add new handler for crowd member vs barrel
-    func crowdMemberDidCollideWithBarrel(member: SKSpriteNode, barrel: BarrelNode) {
-        print("Handling CrowdMember-Barrel collision")
-        if !barrel.isDepleted { // Only active barrels hurt members
-             print("Crowd member hit active barrel! Removing member.")
-             // Remove the specific crowd member
-             if let index = crowdMembers.firstIndex(of: member) {
-                 crowdMembers.remove(at: index)
-                 crowdCount = 1 + crowdMembers.count
-                 updateCrowdLabel()
-             }
-             member.removeFromParent()
-             print("Crowd count now: \(crowdCount)")
-             
-             // Remove the barrel after it hits the first crowd member
-             barrel.removeFromParent()
-             
-        } else {
-            // Member hit an already depleted barrel (which should be gone, but safety check)
-            print("Crowd member hit depleted barrel.")
-            // Might as well remove the depleted barrel if somehow still here
-            barrel.removeFromParent()
-        }
-    }
-
-    // New Zombie Spawner Setup
+    // MARK: - Zombie Spawner (Re-added)
     func setupZombieSpawner() {
         let waitAction = SKAction.wait(forDuration: zombieSpawnTickInterval)
         let spawnAttemptAction = SKAction.run { [weak self] in
@@ -845,15 +854,17 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         self.run(repeatAction, withKey: "zombieSpawnerAction")
     }
 
-    // New Zombie Spawn Attempt Logic
     func attemptToSpawnZombie() {
         // Calculate current probability based on difficulty (linear interpolation)
-        let difficultyProgress = (difficultyFactor - 1.0) / (maxDifficultyFactor - 1.0) // 0.0 to 1.0
-        let currentProbability = zombieSpawnBaseProbability + (zombieSpawnMaxProbability - zombieSpawnBaseProbability) * difficultyProgress
+        let difficultyProgress = max(0, min(1, (difficultyFactor - 1.0) / (maxDifficultyFactor - 1.0))) // Clamp progress 0-1
+        let currentProbability = zombieSpawnBaseProbability + (zombieSpawnMaxProbability - zombieSpawnBaseProbability) * Double(difficultyProgress)
         
         if Double.random(in: 0...1) < currentProbability {
             // Spawn a zombie!
-            guard lanePositions.count == 3 else { return } 
+            guard lanePositions.count == 3 else { 
+                 print("Error: Lane positions not set up correctly for zombie spawn.")
+                 return 
+            }
             let centerLaneX = lanePositions[1]
             let laneWidth = abs(lanePositions[0] - lanePositions[1]) // Assuming equal lanes
             let halfLaneWidth = laneWidth / 2
@@ -862,19 +873,68 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             let randomOffsetX = CGFloat.random(in: -(halfLaneWidth - padding)...(halfLaneWidth - padding))
             
             let spawnX = centerLaneX + randomOffsetX
-            let spawnY = (size.height / 2) - worldNode.position.y + 100 // Above screen top
+            let spawnY = (size.height / 2) - worldNode.position.y + 100 // Above screen top, relative to world
             
-            let zombie = createZombie() // Use existing helper
+            let zombie = createZombie() // Use updated helper
             addNodeToLayer(zombie, position: CGPoint(x: spawnX, y: spawnY), description: "Zombie")
         }
     }
 
-    // Re-add createZombie helper needed by attemptToSpawnZombie
-    private func createZombie() -> SKNode {
-         // Basic zombie creation remains the same
-         return ZombieNode()
-         // Note: Could add difficulty scaling to zombie properties here later if needed (e.g., health)
+    // MARK: - Game Over (Re-added)
+    func gameOver() {
+        // Prevent multiple calls
+        guard player != nil else { return }
+        
+        print("--- GAME OVER --- Triggered")
+        
+        // Stop game actions
+        self.isPaused = true // Pause the scene itself is simpler
+        self.removeAllActions() // Stop scene-level actions like spawners
+        objectLayer.isPaused = true
+        projectileLayer.removeAllChildren()
+
+        // Visual feedback (optional)
+        player?.removeFromParent()
+        player = nil // Nil out player reference
+        for member in crowdMembers {
+            member.removeFromParent()
+        }
+        crowdMembers.removeAll()
+        crowdCount = 0
+        updateCrowdLabel() // Show 0 crowd
+        
+        // --- High Score Logic ---
+        let defaults = UserDefaults.standard
+        let highScoreKey = "highScore"
+        let currentHighScore = defaults.integer(forKey: highScoreKey)
+
+        if score > currentHighScore {
+            defaults.set(score, forKey: highScoreKey)
+            print("New High Score! \(score) saved.")
+        } else {
+            print("Score \(score) did not beat high score \(currentHighScore).")
+        }
+        // ------------------------
+
+        // Transition after a short delay
+        let wait = SKAction.wait(forDuration: 1.5) // Longer delay to see effect
+        let transitionAction = SKAction.run { [weak self] in
+            self?.transitionToGameOverScene()
+        }
+        // Run the transition sequence on the view's scene (which might be self, but safer this way)
+        self.view?.scene?.run(SKAction.sequence([wait, transitionAction]))
     }
+
+    func transitionToGameOverScene() {
+        guard let view = self.view else { return }
+        
+        let gameOverScene = GameOverScene(size: view.bounds.size, score: self.score)
+        gameOverScene.scaleMode = self.scaleMode
+        
+        let transition = SKTransition.fade(withDuration: 1.0)
+        view.presentScene(gameOverScene, transition: transition)
+    }
+
 }
 
 // Extend GameScene to conform to SKPhysicsContactDelegate later
