@@ -102,13 +102,27 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var zombieWalkAction: SKAction?
     private var zombieDieAction: SKAction?
 
+    // Player Animation Assets (New)
+    private var playerAtlas: SKTextureAtlas?
+    private var playerTextures: [SKTexture] = []
+    private var playerAnimationAction: SKAction?
+
+    // Texture Sizes for Scaling (New)
+    private var zombieSize: CGSize = CGSize(width: 30, height: 30) // Default/fallback
+    private var playerTextureSize: CGSize = CGSize(width: 32, height: 32) // Default/fallback
+    private var playerScale: CGFloat = 1.0 // Default scale
+
     override func didMove(to view: SKView) {
         // Setup scene
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         backgroundColor = .darkGray // Will be covered by background tiles
 
-        // Preload Assets (including new zombie assets)
-        preloadZombieAssets() // Call this early
+        // Preload Assets
+        preloadZombieAssets()
+        preloadPlayerAssets() // Add call to preload player assets
+
+        // Calculate scale factor AFTER assets are loaded (New)
+        calculatePlayerScale()
 
         // Add World Node (parent for scrolling elements)
         addChild(worldNode)
@@ -178,10 +192,22 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     func setupPlayer() {
-        player = SKSpriteNode(color: .blue, size: CGSize(width: 32, height: 32))
-        player?.position = CGPoint(x: 0, y: -size.height / 2 + (player?.size.height ?? 0) + 50)
+        // Use the first player texture frame if available
+        let initialTexture = playerTextures.first
+        // Size now comes from texture size multiplied by scale
+        let scaledSize = CGSize(width: playerTextureSize.width * playerScale, height: playerTextureSize.height * playerScale)
+        
+        // Initialize with texture and original size (scale is applied later)
+        player = SKSpriteNode(texture: initialTexture, color: .blue, size: playerTextureSize) 
+        player?.colorBlendFactor = (initialTexture == nil) ? 1.0 : 0.0
+        player?.setScale(playerScale) // Apply calculated scale
+        
+        // Position based on scaled size
+        player?.position = CGPoint(x: 0, y: -size.height / 2 + scaledSize.height + 50)
         player?.zPosition = 10
-        player?.physicsBody = SKPhysicsBody(rectangleOf: player!.size)
+        
+        // Update Physics Body to use scaled size
+        player?.physicsBody = SKPhysicsBody(rectangleOf: scaledSize) 
         player?.physicsBody?.isDynamic = true
         player?.physicsBody?.affectedByGravity = false
         player?.physicsBody?.allowsRotation = false
@@ -191,6 +217,10 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         if let player = player {
             addChild(player)
+            // Run the animation if available
+            if let animation = playerAnimationAction {
+                player.run(animation, withKey: "playerAnimation")
+            }
             // Initially, the player IS the crowd of 1
             // We don't add to crowdMembers array until count > 1
         }
@@ -707,9 +737,19 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         }
 
         // Load walking textures (tile130.png to tile138.png)
+        var loadedWalkTextures: [SKTexture] = [] // Temp array
         for i in 130...138 {
             let textureName = "tile\(i).png"
-            zombieWalkTextures.append(atlas.textureNamed(textureName))
+            loadedWalkTextures.append(atlas.textureNamed(textureName))
+        }
+        zombieWalkTextures = loadedWalkTextures // Assign to property
+
+        // Store size of the first zombie texture (New)
+        if let firstZombieTexture = zombieWalkTextures.first {
+            zombieSize = firstZombieTexture.size()
+            print("Stored zombieSize: \(zombieSize)")
+        } else {
+             print("Warning: Could not get first zombie texture to determine size.")
         }
 
         // Load dying textures (tile260.png to tile265.png)
@@ -732,6 +772,59 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         print("Zombie assets loaded: Walk frames: \(zombieWalkTextures.count), Die frames: \(zombieDieTextures.count)")
         if zombieWalkAction == nil { print("Warning: Zombie walk action not created.") }
         if zombieDieAction == nil { print("Warning: Zombie die action not created.") }
+    }
+
+    func preloadPlayerAssets() {
+        playerAtlas = SKTextureAtlas(named: "Player") // Assumes Player.spriteatlas exists
+        guard let atlas = playerAtlas else {
+            print("Error: Could not load Player texture atlas")
+            return
+        }
+
+        // Load textures, assuming filenames can be sorted alphabetically for animation order
+        let textureNames = atlas.textureNames.sorted()
+        var loadedPlayerTextures: [SKTexture] = [] // Temp array
+        for name in textureNames {
+            loadedPlayerTextures.append(atlas.textureNamed(name))
+        }
+        playerTextures = loadedPlayerTextures // Assign to property
+
+        // Store the original player texture size (New)
+        if let firstPlayerTexture = playerTextures.first {
+             playerTextureSize = firstPlayerTexture.size()
+             print("Stored playerTextureSize: \(playerTextureSize)")
+        } else {
+             print("Warning: Could not get first player texture to determine size.")
+        }
+
+        // Create animation action
+        if !playerTextures.isEmpty {
+            // Adjust timePerFrame for desired animation speed
+            let animation = SKAction.animate(with: playerTextures, timePerFrame: 0.1)
+            playerAnimationAction = SKAction.repeatForever(animation)
+            print("Player assets loaded: Frames: \(playerTextures.count)")
+        } else {
+            print("Warning: No player textures found in Player atlas.")
+        }
+    }
+
+    // New function to calculate scale
+    func calculatePlayerScale() {
+        // Ensure we have valid sizes to prevent division by zero or incorrect scaling
+        guard playerTextureSize.width > 0 && zombieSize.width > 0 else {
+            print("Warning: Cannot calculate player scale due to zero texture width.")
+            playerScale = 1.0 // Keep default scale
+            return
+        }
+        
+        // Calculate scale based on width to match zombie size
+        let scaleToMatchZombie = zombieSize.width / playerTextureSize.width
+        
+        // Apply an additional multiplier to make it smaller than the zombie
+        let finalScaleMultiplier: CGFloat = 0.8 // Make player 80% of zombie width
+        playerScale = scaleToMatchZombie * finalScaleMultiplier
+        
+        print("Calculated playerScale: \(playerScale) (Target: \(finalScaleMultiplier * 100)% of zombie width)")
     }
 
     // ... other functions (addCrowdMembers, removeCrowdMembers, gameOver etc.) ...
@@ -775,30 +868,45 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         guard let player = player else { return }
         print("Adding \(count) members to crowd.")
         
+        // Use the first player texture frame if available
+        let initialTexture = playerTextures.first
+        // Use original player texture size and apply scale
+        let memberSize = playerTextureSize 
+        let scaledMemberSize = CGSize(width: memberSize.width * playerScale, height: memberSize.height * playerScale)
+        // Determine color/blend based on texture success
+        let memberColor = crowdMemberColor 
+        let blendFactor: CGFloat = (initialTexture == nil) ? 1.0 : 0.0
+        
         for i in 0..<count {
-            let member = SKSpriteNode(color: crowdMemberColor, size: crowdMemberSize)
+            // Initialize with texture and original size
+            let member = SKSpriteNode(texture: initialTexture, color: memberColor, size: memberSize)
+            member.colorBlendFactor = blendFactor
+            member.setScale(playerScale) // Apply scale
             member.zPosition = player.zPosition - 0.1
             
             // Calculate initial position based on the next available offset relative to the player
+            // Offsets might need adjustment based on the new smaller size
+            // TODO: Review crowdOffsets values if formation looks wrong after scaling.
             let currentMemberCount = crowdMembers.count + i
             let offsetIndex = currentMemberCount % crowdOffsets.count
             member.position = player.position + crowdOffsets[offsetIndex]
             
-            // Add physics body to crowd member
-            member.physicsBody = SKPhysicsBody(rectangleOf: member.size)
+            // Add physics body to crowd member using SCALED size
+            member.physicsBody = SKPhysicsBody(rectangleOf: scaledMemberSize)
             member.physicsBody?.isDynamic = true // Allow movement
             member.physicsBody?.affectedByGravity = false
             member.physicsBody?.allowsRotation = false
             member.physicsBody?.categoryBitMask = PhysicsCategory.crowdMember
             member.physicsBody?.collisionBitMask = PhysicsCategory.none
-            // Detect collisions with zombies AND barrels
             member.physicsBody?.contactTestBitMask = PhysicsCategory.zombie | PhysicsCategory.barrel
-            
-            // Assign a unique name to identify specific members if needed later
-            // member.name = "crowdMember_\(UUID().uuidString)" 
             
             crowdMembers.append(member)
             addChild(member)
+            
+            // Run the animation if available
+            if let animation = playerAnimationAction {
+                member.run(animation, withKey: "playerAnimation")
+            }
         }
         crowdCount = 1 + crowdMembers.count
         print("Crowd count now: \(crowdCount)")
