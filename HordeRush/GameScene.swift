@@ -996,10 +996,11 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         print("--- GAME OVER --- Triggered")
         
         // Stop game actions
-        self.isPaused = true // Pause the scene itself is simpler
-        self.removeAllActions() // Stop scene-level actions like spawners
+        // self.isPaused = true // Pausing the scene might block the transition action
+        self.removeAllActions() // Stop scene-level actions like spawners first
         objectLayer.isPaused = true
         projectileLayer.removeAllChildren()
+        // Optionally pause individual nodes if needed, but removing actions might be enough
 
         // Visual feedback (optional)
         player?.removeFromParent()
@@ -1026,11 +1027,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // Transition after a short delay
         let wait = SKAction.wait(forDuration: 1.5) // Longer delay to see effect
-        let transitionAction = SKAction.run { [weak self] in
+        let transitionBlock = SKAction.run { [weak self] in
             self?.transitionToGameOverScene()
         }
-        // Run the transition sequence on the view's scene (which might be self, but safer this way)
-        self.view?.scene?.run(SKAction.sequence([wait, transitionAction]))
+        
+        // Create the sequence
+        let sequence = SKAction.sequence([wait, transitionBlock])
+        
+        // Run the sequence on the scene *before* potentially pausing it, or run on the view.
+        // Let's try running it on the scene directly, as it should still execute if the scene isn't fully paused yet.
+        // If this still freezes, the next step is to run it on self.view
+        self.run(sequence) 
+        
+        // Optionally, pause the scene *after* starting the transition sequence if needed
+        // self.isPaused = true 
     }
 
     func transitionToGameOverScene() {
