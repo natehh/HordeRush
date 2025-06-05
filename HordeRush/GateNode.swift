@@ -2,74 +2,121 @@ import SpriteKit
 
 class GateNode: SKSpriteNode {
 
-    var currentValue: Int = 0
+    var currentValue: Int
     let valueLabel: SKLabelNode
 
+    // Textures & Animations (passed in from GameScene)
+    private let greenClosedTexture: SKTexture?
+    private let redClosedTexture: SKTexture?
+    private let greenOpenAnimation: SKAction?
+    private let redOpenAnimation: SKAction?
+
     // Constants for appearance (can be adjusted)
-    private let gateSize = CGSize(width: 80, height: 40)
-    private let initialColor = UIColor.red.withAlphaComponent(0.7)
-    private let positiveColor = UIColor.green.withAlphaComponent(0.7)
+    // private let gateSize = CGSize(width: 80, height: 40) // Size will now come from texture
+    // private let initialColor = UIColor.red.withAlphaComponent(0.7) // Color will be from texture
+    // private let positiveColor = UIColor.green.withAlphaComponent(0.7)
     private let labelFontSize: CGFloat = 20.0
 
-    init(initialValue: Int) {
+    init(initialValue: Int, 
+         greenClosed: SKTexture?, redClosed: SKTexture?, 
+         greenOpenAnim: SKAction?, redOpenAnim: SKAction?, 
+         defaultSize: CGSize) {
+            
         self.currentValue = initialValue
-        self.valueLabel = SKLabelNode(fontNamed: "Arial-BoldMT") // Choose a suitable font
+        self.valueLabel = SKLabelNode(fontNamed: "Arial-BoldMT") 
 
-        // Initialize the SKSpriteNode part
-        super.init(texture: nil, color: initialColor, size: gateSize)
+        self.greenClosedTexture = greenClosed
+        self.redClosedTexture = redClosed
+        self.greenOpenAnimation = greenOpenAnim
+        self.redOpenAnimation = redOpenAnim
+
+        // Determine initial texture and size
+        let initialTexture = currentValue >= 1 ? greenClosedTexture : redClosedTexture
+        let nodeSize = initialTexture?.size() ?? defaultSize
+
+        super.init(texture: initialTexture, color: .clear, size: nodeSize) // Use .clear color if texture is primary
 
         // Configure the label
         valueLabel.fontSize = labelFontSize
         valueLabel.fontColor = .white
         valueLabel.verticalAlignmentMode = .center
         valueLabel.horizontalAlignmentMode = .center
-        valueLabel.position = CGPoint(x: 0, y: 0) // Centered within the gate sprite
-        valueLabel.zPosition = 1 // Ensure label is above the gate background
-        updateLabel() // Set initial text and color
-
+        valueLabel.position = CGPoint(x: 0, y: -5) // Move label 5 points down from center
+        valueLabel.zPosition = 1 
         addChild(valueLabel)
+        
+        updateLabel() // Set initial text and texture based on value
 
-        // Setup Physics Body
         setupPhysicsBody()
     }
 
-    // Required initializer for SKSpriteNode subclasses
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
     private func setupPhysicsBody() {
-        // Use the exact size of the node for the physics body
         physicsBody = SKPhysicsBody(rectangleOf: self.size)
-        physicsBody?.isDynamic = false // Gates don't move due to collisions
+        physicsBody?.isDynamic = false 
         physicsBody?.categoryBitMask = PhysicsCategory.gate
-        physicsBody?.collisionBitMask = PhysicsCategory.none // No physical collision response
-        physicsBody?.contactTestBitMask = PhysicsCategory.projectile | PhysicsCategory.player // Detect contacts
+        physicsBody?.collisionBitMask = PhysicsCategory.none 
+        physicsBody?.contactTestBitMask = PhysicsCategory.projectile | PhysicsCategory.player 
     }
 
     private func updateLabel() {
         valueLabel.text = "\(currentValue)"
-        // Change gate color based on value (optional visual feedback)
-        self.color = currentValue >= 0 ? positiveColor : initialColor
-        // Could also change label color here if desired
+        // Change gate texture based on value
+        if currentValue >= 1 {
+            if self.texture != greenClosedTexture {
+                self.texture = greenClosedTexture
+                if greenClosedTexture == nil { print("Warning: greenClosedTexture is nil in updateLabel") }
+            }
+        } else {
+            if self.texture != redClosedTexture {
+                self.texture = redClosedTexture
+                if redClosedTexture == nil { print("Warning: redClosedTexture is nil in updateLabel") }
+            }
+        }
+        // Adjust size if texture changed and new texture has a different size
+        if let newTexture = self.texture, newTexture.size() != self.size && newTexture.size() != .zero {
+            self.size = newTexture.size()
+            // Re-setup physics body if size changes, to match new visuals
+            // This might be too expensive if called frequently. Consider if size changes are expected.
+            // setupPhysicsBody() 
+        }
     }
 
-    // Called when a projectile hits the gate
     func hitByProjectile() {
         currentValue += 1
         updateLabel()
-
-        // Optional: Add a visual effect like a quick scale pulse
         let pulseUp = SKAction.scale(to: 1.1, duration: 0.05)
         let pulseDown = SKAction.scale(to: 1.0, duration: 0.05)
         let pulseSequence = SKAction.sequence([pulseUp, pulseDown])
         self.run(pulseSequence)
     }
 
-    // Called when the player passes through the gate
-    func playerContact() -> Int {
-        print("Player contacted gate with final value: \\(currentValue)")
-        // Return the value so GameScene can handle the effect
-        return currentValue
+    // Modified to play animation and then call completion with its value
+    func playerContact(completion: @escaping (Int) -> Void) {
+        print("Player contacted gate. Final value: \(currentValue). Playing animation.")
+        
+        // Call completion handler immediately with the gate's value
+        // GameScene will use this to update crowd count *before* animation starts
+        completion(currentValue)
+
+        // Determine which animation to play
+        let openAnimation: SKAction?
+        if currentValue >= 1 {
+            openAnimation = greenOpenAnimation
+        } else {
+            openAnimation = redOpenAnimation
+        }
+
+        if let anim = openAnimation {
+            let sequence = SKAction.sequence([anim, SKAction.removeFromParent()])
+            self.run(sequence)
+        } else {
+            // Fallback: if no animation, remove immediately
+            print("Warning: No open animation found for gate. Removing directly.")
+            self.removeFromParent()
+        }
     }
 } 

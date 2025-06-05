@@ -52,13 +52,13 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private let crowdMemberColor = UIColor.cyan
     // Define relative positions for crowd members around the player
     private let crowdOffsets: [CGPoint] = [
-        CGPoint(x: -30, y: -40), // Back-left
-        CGPoint(x:  30, y: -40), // Back-right
-        CGPoint(x:   0, y: -60), // Directly behind 
-        CGPoint(x: -60, y: -80), // Further back-left
-        CGPoint(x:  60, y: -80), // Further back-right
-        CGPoint(x: -30, y: -100),// Even further back-left
-        CGPoint(x:  30, y: -100),// Even further back-right
+        CGPoint(x: -10, y: -15), // Back-left (Scaled down)
+        CGPoint(x:  10, y: -15), // Back-right (Scaled down)
+        CGPoint(x:   0, y: -20), // Directly behind (Scaled down)
+        CGPoint(x: -20, y: -25), // Further back-left (Scaled down)
+        CGPoint(x:  20, y: -25), // Further back-right (Scaled down)
+        CGPoint(x: -10, y: -30), // Even further back-left (Scaled down)
+        CGPoint(x:  10, y: -30), // Even further back-right (Scaled down)
         // Add more for larger crowds if needed
     ]
 
@@ -107,6 +107,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var playerTextures: [SKTexture] = []
     private var playerAnimationAction: SKAction?
 
+    // Gate Animation Assets (New)
+    private var gateAtlas: SKTextureAtlas?
+    private var gateGreenClosedTexture: SKTexture?
+    private var gateRedClosedTexture: SKTexture?
+    private var gateGreenOpenFrames: [SKTexture] = []
+    private var gateRedOpenFrames: [SKTexture] = []
+    private var gateGreenOpenAnimation: SKAction?
+    private var gateRedOpenAnimation: SKAction?
+    private var gateSize: CGSize = CGSize(width: 80, height: 40) // Fallback/default
+
     // Texture Sizes for Scaling (New)
     private var zombieSize: CGSize = CGSize(width: 30, height: 30) // Default/fallback
     private var playerTextureSize: CGSize = CGSize(width: 32, height: 32) // Default/fallback
@@ -119,7 +129,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         // Preload Assets
         preloadZombieAssets()
-        preloadPlayerAssets() // Add call to preload player assets
+        preloadPlayerAssets()
+        preloadGateAssets() // Add call to preload gate assets
 
         // Calculate scale factor AFTER assets are loaded (New)
         calculatePlayerScale()
@@ -368,16 +379,21 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
 
         if typeRoll < 0.4 { // 40% chance Gate
             // Scale gate values (more negative) with difficulty - SLOWER SCALING
-            let baseMinGate: CGFloat = -5.0 // Start less negative
-            let baseMaxGate: CGFloat = -2.0  // Start less negative
-            // Use sqrt for slower scaling. Ensure max is always <= -1 and >= min
+            let baseMinGate: CGFloat = -5.0 
+            let baseMaxGate: CGFloat = -2.0  
             let scaledMin = Int(baseMinGate * sqrt(difficultyFactor))
             let scaledMax = min(-1, Int(baseMaxGate * sqrt(difficultyFactor)))
             let minGate = scaledMin
-            let maxGate = max(minGate, scaledMax) // Ensure max >= min
+            let maxGate = max(minGate, scaledMax) 
             
             let initialValue = Int.random(in: minGate ... maxGate)
-            let node = GateNode(initialValue: initialValue)
+            // Pass the preloaded assets to the GateNode initializer
+            let node = GateNode(initialValue: initialValue, 
+                                greenClosed: gateGreenClosedTexture, 
+                                redClosed: gateRedClosedTexture, 
+                                greenOpenAnim: gateGreenOpenAnimation, 
+                                redOpenAnim: gateRedOpenAnimation,
+                                defaultSize: self.gateSize) // Pass the preloaded/fallback gateSize
             return node
         } else if typeRoll < 0.8 { // 40% chance Hazard Barrel (0.4 to 0.8)
             // Scale hazard barrel values (more positive) with difficulty (Using sqrt for consistency)
@@ -638,18 +654,18 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     func playerDidCollideWithGate(player: SKSpriteNode, gate: GateNode) {
-        print("Player hit Gate")
-        let valueChange = gate.playerContact() // Get value directly
-        
-        if valueChange > 0 {
-            addCrowdMembers(count: valueChange)
-        } else if valueChange < 0 {
-            removeCrowdMembers(count: abs(valueChange))
+        print("Player hit Gate, calling gate.playerContact with completion handler")
+        // Gate handles its own animation and removal.
+        // GameScene updates crowd based on the value passed to the completion handler.
+        gate.playerContact() { valueChange in
+            print("Gate.playerContact completion: valueChange = \(valueChange)")
+            if valueChange >= 1 { // Use >= 1 for positive, as 0 is also typically red/negative effect
+                self.addCrowdMembers(count: valueChange)
+            } else if valueChange <= 0 { // Includes 0 and negative
+                self.removeCrowdMembers(count: abs(valueChange))
+            }
         }
-        
-        // Gate should be removed immediately after player contact regardless of value
-        // It might manage its own removal in some cases, but let's ensure it here.
-        gate.removeFromParent() 
+        // DO NOT call gate.removeFromParent() here anymore, GateNode does it.
     }
 
     func playerDidCollideWithBarrel(player: SKSpriteNode, barrel: BarrelNode) {
@@ -806,6 +822,71 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         } else {
             print("Warning: No player textures found in Player atlas.")
         }
+    }
+
+    func preloadGateAssets() {
+        gateAtlas = SKTextureAtlas(named: "Obstacles") // Assumes Gate.spriteatlas exists
+        guard let atlas = gateAtlas else {
+            print("Error: Could not load Gate texture atlas")
+            return
+        }
+        print("Gate atlas loaded: \(atlas.textureNames)") // Log all names in atlas
+
+        // Load specific textures
+        gateGreenClosedTexture = atlas.textureNamed("tile000.png")
+        print("Loaded gateGreenClosedTexture ('tile000.png'): \(String(describing: gateGreenClosedTexture)), size: \(String(describing: gateGreenClosedTexture?.size()))")
+        
+        gateRedClosedTexture = atlas.textureNamed("tile001.png")
+        print("Loaded gateRedClosedTexture ('tile001.png'): \(String(describing: gateRedClosedTexture)), size: \(String(describing: gateRedClosedTexture?.size()))")
+
+        // Store gate size from one of the textures (if loaded and valid)
+        if let redClosedTex = gateRedClosedTexture, redClosedTex.size() != .zero {
+            gateSize = redClosedTex.size()
+            print("Stored gateSize: \(gateSize) from red closed texture")
+        } else if let greenClosedTex = gateGreenClosedTexture, greenClosedTex.size() != .zero {
+            gateSize = greenClosedTex.size()
+            print("Stored gateSize: \(gateSize) from green closed texture")
+        } else {
+            print("WARNING: Could not load valid closed gate textures to determine size. Using fallback: \(gateSize)")
+        }
+
+        // Load green open animation frames using a temporary local array
+        let greenOpenNames = ["tile003.png", "tile006.png", "tile009.png"]
+        var tempGreenOpenFrames: [SKTexture] = []
+        for name in greenOpenNames {
+            let texture = atlas.textureNamed(name)
+            print("  Loading green open frame '\(name)': \(texture), size: \(texture.size())")
+            tempGreenOpenFrames.append(texture)
+        }
+        gateGreenOpenFrames = tempGreenOpenFrames // Assign to class property
+
+        // Load red open animation frames using a temporary local array
+        let redOpenNames = ["tile004.png", "tile007.png", "tile010.png"]
+        var tempRedOpenFrames: [SKTexture] = []
+        for name in redOpenNames {
+            let texture = atlas.textureNamed(name)
+            print("  Loading red open frame '\(name)': \(texture), size: \(texture.size())")
+            tempRedOpenFrames.append(texture)
+        }
+        gateRedOpenFrames = tempRedOpenFrames // Assign to class property
+
+        // Create animation actions
+        let animationTimePerFrame: TimeInterval = 0.15 // Adjust as needed
+        if !gateGreenOpenFrames.isEmpty && gateGreenOpenFrames.allSatisfy({ $0.size() != .zero }) {
+            gateGreenOpenAnimation = SKAction.animate(with: gateGreenOpenFrames, timePerFrame: animationTimePerFrame)
+            print("Green gate open animation created. Frame count: \(gateGreenOpenFrames.count)")
+        } else {
+            print("WARNING: Green gate open animation NOT created. Frames are missing or invalid. Frame count: \(gateGreenOpenFrames.count)")
+        }
+
+        if !gateRedOpenFrames.isEmpty && gateRedOpenFrames.allSatisfy({ $0.size() != .zero }) {
+            gateRedOpenAnimation = SKAction.animate(with: gateRedOpenFrames, timePerFrame: animationTimePerFrame)
+            print("Red gate open animation created. Frame count: \(gateRedOpenFrames.count)")
+        } else {
+            print("WARNING: Red gate open animation NOT created. Frames are missing or invalid. Frame count: \(gateRedOpenFrames.count)")
+        }
+        
+        print("Final Gate assets check: GreenClosed: \(String(describing: gateGreenClosedTexture)), RedClosed: \(String(describing: gateRedClosedTexture)), GreenOpenFrames: \(gateGreenOpenFrames.count), RedOpenFrames: \(gateRedOpenFrames.count)")
     }
 
     // New function to calculate scale
